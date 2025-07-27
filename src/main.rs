@@ -1,5 +1,14 @@
 use std::fs;
 use std::path::Path;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the root of the life directory
+    #[arg(long, value_name = "PATH")]
+    life_path: String,
+}
 
 fn extract_datetime_original<P: AsRef<std::path::Path>>(file_path: P) -> Result<String, String> {
     let exif = rexif::parse_file(file_path.as_ref().to_str().unwrap())
@@ -79,6 +88,7 @@ fn rename_all_media_in_dir<P: AsRef<Path>>(dir_path: P) {
 }
 
 fn main() {
-    let dir_path = "/home/daniel/life-inbox-copy"; // Change this to your target directory
-    rename_all_media_in_dir(dir_path);
+    let args = Args::parse();
+    let inbox_path = format!("{}/inbox", args.life_path.trim_end_matches('/'));
+    rename_all_media_in_dir(&inbox_path);
 }
