@@ -1,6 +1,6 @@
 mod cli;
-use cli::parse_args;
 use cleanbox::rename_all_media_in_dir;
+use cli::parse_args;
 use std::path::Path;
 
 fn main() {
