@@ -1,149 +1,123 @@
-use std::fs;
-use std::io::Read;
-use std::path::{Path, PathBuf};
+pub mod config;
+pub mod error;
+pub mod exif;
+pub mod filesystem;
+pub mod media;
+pub mod naming;
+pub mod organization;
+pub mod processor;
 
-pub fn extract_datetime_original<P: AsRef<std::path::Path>>(
-    file_path: P,
-) -> Result<String, String> {
-    let exif = rexif::parse_file(file_path.as_ref().to_str().unwrap())
-        .map_err(|e| format!("Failed to parse EXIF: {e}"))?;
-    for entry in &exif.entries {
-        if entry.tag == rexif::ExifTag::DateTimeOriginal {
-            // EXIF datetime format: "YYYY:MM:DD HH:MM:SS"
-            let raw = entry.value_more_readable.trim();
-            let parts: Vec<&str> = raw.split(' ').collect();
-            if parts.len() == 2 {
-                let date = parts[0].replace(":", "-");
-                let time = parts[1].replace(":", "-");
-                return Ok(format!("{date}_{time}"));
-            }
-            return Err("Malformed DateTimeOriginal value".to_string());
-        }
+pub use config::{DuplicateHandling, ProcessingConfig};
+pub use error::{CleanboxError, Result};
+pub use exif::{ExifParser, RexifParser};
+pub use filesystem::{FileManager, StdFileManager};
+pub use media::{MediaFile, MediaMetadata, MediaType};
+pub use naming::{CustomNamingStrategy, NamingStrategy, TimestampNamingStrategy};
+pub use organization::{
+    CustomOrganizer, FlatOrganizer, MonthlyOrganizer, OrganizationStrategy, YearlyOrganizer,
+};
+pub use processor::{MediaProcessor, ProcessingResult};
+
+use std::path::Path;
+
+pub fn create_default_processor(
+    inbox_path: impl AsRef<Path>,
+    media_root: impl AsRef<Path>,
+) -> MediaProcessor<RexifParser, StdFileManager, TimestampNamingStrategy, MonthlyOrganizer> {
+    let config = ProcessingConfig::new(
+        inbox_path.as_ref().to_path_buf(),
+        media_root.as_ref().to_path_buf(),
+    );
+
+    MediaProcessor::new(
+        RexifParser::new(),
+        StdFileManager::new(),
+        TimestampNamingStrategy::new(),
+        MonthlyOrganizer::new(),
+        config,
+    )
+}
+
+pub fn process_media_directory(
+    inbox_path: impl AsRef<Path>,
+    media_root: impl AsRef<Path>,
+) -> Result<ProcessingResult> {
+    let processor = create_default_processor(inbox_path, media_root);
+    processor.process_directory()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_create_default_processor() {
+        let inbox = PathBuf::from("/test/inbox");
+        let media = PathBuf::from("/test/media");
+        let processor = create_default_processor(&inbox, &media);
+
+        assert_eq!(processor.config().inbox_path, inbox);
+        assert_eq!(processor.config().media_root, media);
+        assert_eq!(processor.config().hash_length, 6);
+        assert!(matches!(
+            processor.config().handle_duplicates,
+            DuplicateHandling::AppendHash
+        ));
     }
-    Err("DateTimeOriginal tag not found".to_string())
-}
 
-pub fn rename_file_with_datetime<P: AsRef<Path>>(
-    file_path: P,
-    datetime: &str,
-) -> Result<String, String> {
-    let path = file_path.as_ref();
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .ok_or("File has no extension")?;
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let new_name = format!("{datetime}.{ext}");
-    let new_path = parent.join(&new_name);
-    fs::rename(path, &new_path).map_err(|e| format!("Failed to rename file: {e}"))?;
-    Ok(new_path.to_string_lossy().to_string())
-}
+    #[test]
+    fn test_all_types_exported() {
+        // This test ensures all important types are properly exported
+        // and can be used together
 
-pub fn append_sha1_to_filename<P: AsRef<Path>>(file_path: P) -> Result<String, String> {
-    use sha1::{Digest, Sha1};
-    let path = file_path.as_ref();
-    let mut file =
-        fs::File::open(path).map_err(|e| format!("Failed to open file for hashing: {e}"))?;
-    let mut hasher = Sha1::new();
-    let mut buffer = [0u8; 8192];
-    loop {
-        let n = file
-            .read(&mut buffer)
-            .map_err(|e| format!("Failed to read file for hashing: {e}"))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
+        let _config: ProcessingConfig =
+            ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/media"));
+
+        let _parser: RexifParser = RexifParser::new();
+        let _file_manager: StdFileManager = StdFileManager::new();
+        let _naming: TimestampNamingStrategy = TimestampNamingStrategy::new();
+        let _org: MonthlyOrganizer = MonthlyOrganizer::new();
+        let _custom_naming: CustomNamingStrategy =
+            CustomNamingStrategy::new("{datetime}.{ext}".to_string());
+        let _yearly_org: YearlyOrganizer = YearlyOrganizer::new();
+        let _flat_org: FlatOrganizer = FlatOrganizer::new();
+        let _custom_org: CustomOrganizer = CustomOrganizer::new("{year}/{month}".to_string());
+
+        let _duplicate_handling: DuplicateHandling = DuplicateHandling::AppendHash;
+
+        // Test that Result type alias works
+        let _result: Result<String> = Ok("test".to_string());
+        let _error: CleanboxError = CleanboxError::InvalidPath("test".to_string());
     }
-    let hash = hasher.finalize();
-    let hash_str = format!("{hash:x}");
-    let hash6 = &hash_str[..6];
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or("Invalid file stem")?;
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .ok_or("Invalid file extension")?;
-    Ok(format!("{stem}_{hash6}.{ext}"))
-}
 
-pub fn move_media_to_monthly_dir<P: AsRef<Path>>(
-    file_path: P,
-    datetime: &str,
-    life_media_root: &Path,
-) -> Result<PathBuf, String> {
-    // datetime: YYYY-MM-DD_HH-MM-SS
-    let date_part = datetime
-        .split('_')
-        .next()
-        .ok_or("Invalid datetime format")?;
-    let mut date_split = date_part.split('-');
-    let year = date_split.next().ok_or("Invalid date format")?;
-    let month = date_split.next().ok_or("Invalid date format")?; // nth(1) skips month
-    let target_dir = life_media_root.join(year).join(month);
-    fs::create_dir_all(&target_dir).map_err(|e| format!("Failed to create target dir: {e}"))?;
-    let ext = Path::new(file_path.as_ref())
-        .extension()
-        .and_then(|e| e.to_str())
-        .ok_or("File has no extension")?;
-    let target_name = format!("{datetime}.{ext}");
-    let mut target_path = target_dir.join(&target_name);
-    // If collision, append hash
-    if target_path.exists() {
-        let hash_name = append_sha1_to_filename(&file_path)?;
-        target_path = target_dir.join(hash_name);
+    #[test]
+    fn test_media_types_integration() {
+        let media_file = MediaFile::new("/test/image.jpg");
+        let metadata = MediaMetadata::new("image/jpeg".to_string())
+            .with_datetime("2023-12-01_14-30-00".to_string())
+            .with_hash("abc123".to_string());
+
+        let media_file = media_file.with_metadata(metadata);
+        assert!(media_file.is_supported_media());
+        assert_eq!(media_file.extension().unwrap(), "jpg");
     }
-    fs::rename(&file_path, &target_path).map_err(|e| format!("Failed to move file: {e}"))?;
-    Ok(target_path)
-}
 
-pub fn rename_all_media_in_dir<P: AsRef<Path>>(dir_path: P, life_media_root: &Path) {
-    let dir = match fs::read_dir(&dir_path) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("Failed to read directory: {e}");
-            return;
+    #[test]
+    fn test_error_integration() {
+        use std::io;
+
+        // Test error conversion
+        let io_error = io::Error::new(io::ErrorKind::NotFound, "test");
+        let cleanbox_error: CleanboxError = io_error.into();
+
+        match cleanbox_error {
+            CleanboxError::Io(_) => {} // Expected
+            _ => panic!("Wrong error type"),
         }
-    };
-    for entry in dir {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("Failed to read entry: {e}");
-                continue;
-            }
-        };
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let file_str = match path.to_str() {
-            Some(s) => s,
-            None => {
-                eprintln!("Invalid file path");
-                continue;
-            }
-        };
-        let exif = match rexif::parse_file(file_str) {
-            Ok(exif) => exif,
-            Err(_) => continue, // Not a media file rexif can parse
-        };
-        let mime = exif.mime.to_lowercase();
-        if mime.starts_with("image/") || mime.starts_with("video/") {
-            match extract_datetime_original(file_str) {
-                Ok(datetime) => match rename_file_with_datetime(file_str, &datetime) {
-                    Ok(renamed_path) => {
-                        match move_media_to_monthly_dir(&renamed_path, &datetime, life_media_root) {
-                            Ok(final_path) => println!("Moved to {}", final_path.display()),
-                            Err(e) => eprintln!("Failed to move {renamed_path}: {e}"),
-                        }
-                    }
-                    Err(e) => eprintln!("Failed to rename {file_str}: {e}"),
-                },
-                Err(e) => eprintln!("Failed to extract DateTimeOriginal from {file_str}: {e}"),
-            }
-        }
+
+        // Test Result type alias
+        let result: Result<i32> = Err(CleanboxError::InvalidPath("test".to_string()));
+        assert!(result.is_err());
     }
 }
