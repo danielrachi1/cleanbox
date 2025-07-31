@@ -492,6 +492,9 @@ where
             }
         }
 
+        // Save updated tag dictionary after processing all documents
+        document_collector.save_tag_dictionary(&self.life_config.tags_file())?;
+
         Ok(())
     }
 
