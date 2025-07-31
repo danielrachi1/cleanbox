@@ -1,15 +1,12 @@
 mod cli;
-use cleanbox::process_media_directory;
+use cleanbox::process_life_directory;
 use cli::parse_args;
-use std::path::Path;
 use std::process;
 
 fn main() {
     let args = parse_args();
-    let inbox_path = format!("{}/inbox", args.life_path.trim_end_matches('/'));
-    let media_root = Path::new(&args.life_path).join("media");
 
-    match process_media_directory(&inbox_path, &media_root) {
+    match process_life_directory(&args.life_path) {
         Ok(result) => {
             println!("Processing completed:");
             println!("  Processed: {} files", result.processed_files);

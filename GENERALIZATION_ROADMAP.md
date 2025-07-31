@@ -155,7 +155,7 @@ The architecture must support intelligent file categorization and routing within
 - [x] Add clear error messages for user input validation failures
 
 ### Step 0.7: Simplified Configuration Pattern
-- [ ] Replace `ProcessingConfig` with `LifeConfig` in `src/config.rs`:
+- [x] Replace `ProcessingConfig` with `LifeConfig` in `src/config.rs`:
   ```rust
   pub struct LifeConfig {
       pub life_path: PathBuf,  // Single source of truth
@@ -171,7 +171,7 @@ The architecture must support intelligent file categorization and routing within
       pub fn tags_file(&self) -> PathBuf { self.documents_root().join("tags.txt") }
   }
   ```
-- [ ] Update all config usage throughout codebase
+- [x] Update all config usage throughout codebase
 
 ### Step 0.8: Document Input Structure (No Metadata Needed)
 - [ ] Create `DocumentInput` struct in new `src/document.rs`:

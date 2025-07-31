@@ -8,7 +8,7 @@ pub mod organization;
 pub mod paths;
 pub mod processor;
 
-pub use config::{DuplicateHandling, ProcessingConfig};
+pub use config::{DuplicateHandling, LifeConfig, ProcessingConfig};
 pub use error::{CleanboxError, Result};
 pub use metadata::{MetadataParser, RexifParser};
 pub use filesystem::{FileManager, StdFileManager};
@@ -17,7 +17,7 @@ pub use naming::{CustomNamingStrategy, NamingStrategy, TimestampNamingStrategy};
 pub use organization::{
     CustomOrganizer, FlatOrganizer, MonthlyOrganizer, OrganizationStrategy, YearlyOrganizer,
 };
-pub use paths::{BasePathResolver, LifeDirectoryResolver};
+pub use paths::{BasePathResolver, LifeDirectoryResolver, LifePathResolver};
 pub use processor::{FileProcessor, ProcessingResult};
 
 use std::path::Path;
@@ -45,6 +45,21 @@ pub fn process_media_directory(
     media_root: impl AsRef<Path>,
 ) -> Result<ProcessingResult> {
     let processor = create_default_processor(inbox_path, media_root);
+    processor.process_directory()
+}
+
+pub fn process_life_directory(life_path: impl AsRef<Path>) -> Result<ProcessingResult> {
+    let life_config = LifeConfig::new(life_path.as_ref().to_path_buf());
+    let processing_config = life_config.to_processing_config();
+    
+    let processor = FileProcessor::new(
+        RexifParser::new(),
+        StdFileManager::new(),
+        TimestampNamingStrategy::new(),
+        MonthlyOrganizer::new(),
+        processing_config,
+    );
+    
     processor.process_directory()
 }
 
@@ -121,5 +136,36 @@ mod tests {
         // Test Result type alias
         let result: Result<i32> = Err(CleanboxError::InvalidPath("test".to_string()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_process_media_directory_integration() {
+        // This test doesn't actually process files, just verifies the API works
+        let result = process_media_directory("/nonexistent/inbox", "/nonexistent/media");
+        // Should fail due to nonexistent paths, but the API should be callable
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_process_life_directory_integration() {
+        // This test doesn't actually process files, just verifies the API works
+        let result = process_life_directory("/nonexistent/life");
+        // Should fail due to nonexistent paths, but the API should be callable
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_life_config_integration() {
+        let life_config = LifeConfig::new(PathBuf::from("/home/user/life"))
+            .with_hash_length(8)
+            .with_duplicate_handling(DuplicateHandling::Skip);
+            
+        assert_eq!(life_config.life_path, PathBuf::from("/home/user/life"));
+        assert_eq!(life_config.inbox_path(), PathBuf::from("/home/user/life/inbox"));
+        assert_eq!(life_config.media_root(), PathBuf::from("/home/user/life/media"));
+        assert_eq!(life_config.documents_root(), PathBuf::from("/home/user/life/documents"));
+        assert_eq!(life_config.tags_file(), PathBuf::from("/home/user/life/documents/tags.txt"));
+        assert_eq!(life_config.hash_length, 8);
+        assert!(matches!(life_config.handle_duplicates, DuplicateHandling::Skip));
     }
 }
