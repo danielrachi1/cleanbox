@@ -16,14 +16,12 @@ impl FileType {
             FileType::Image
         } else if mime_lower.starts_with("video/") {
             FileType::Video
-        } else if mime_lower.starts_with("application/pdf")
-            || mime_lower.starts_with("application/msword")
-            || mime_lower.starts_with("application/vnd.openxmlformats")
-            || mime_lower.starts_with("text/")
-        {
-            FileType::Document
-        } else {
+        } else if mime_lower.is_empty() {
             FileType::Unknown
+        } else {
+            // Default all other valid MIME types to Document
+            // This includes application/zip, application/json, etc.
+            FileType::Document
         }
     }
 
@@ -156,9 +154,11 @@ mod tests {
         );
         assert_eq!(FileType::from_mime("text/plain"), FileType::Document);
         assert_eq!(FileType::from_mime("text/csv"), FileType::Document);
+        assert_eq!(FileType::from_mime("application/zip"), FileType::Document);
+        assert_eq!(FileType::from_mime("application/json"), FileType::Document);
         assert_eq!(
             FileType::from_mime("application/unknown"),
-            FileType::Unknown
+            FileType::Document
         );
         assert_eq!(FileType::from_mime(""), FileType::Unknown);
     }
@@ -280,7 +280,7 @@ mod tests {
         file = File::new(&path).with_metadata(document_metadata);
         assert!(file.is_supported_media());
 
-        let unsupported_metadata = FileMetadata::new("application/unknown".to_string());
+        let unsupported_metadata = FileMetadata::new("".to_string()); // Empty MIME = Unknown
         file = File::new(&path).with_metadata(unsupported_metadata);
         assert!(!file.is_supported_media());
     }

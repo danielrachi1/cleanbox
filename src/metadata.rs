@@ -53,7 +53,12 @@ impl MetadataParser for RexifParser {
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         .to_string()
                 }
-                _ => "application/octet-stream".to_string(),
+                Some("zip") => "application/zip".to_string(),
+                Some("json") => "application/json".to_string(),
+                Some("csv") => "text/csv".to_string(),
+                Some("xml") => "application/xml".to_string(),
+                Some(_) => "application/octet-stream".to_string(), // Default for unknown extensions
+                None => "".to_string(), // No extension - will be classified as Unknown
             }
         };
 
@@ -181,8 +186,8 @@ mod tests {
 
         let result = parser.parse_metadata(temp_file.path()).unwrap();
 
-        // Should be classified as Unknown since it's not a recognized type
-        assert_eq!(result.file_type, FileType::Unknown);
+        // Should be classified as Document since application/octet-stream is a valid MIME
+        assert_eq!(result.file_type, FileType::Document);
         assert_eq!(result.mime_type, "application/octet-stream");
     }
 
@@ -209,6 +214,22 @@ mod tests {
         assert!(parser.supports_file_type(&FileType::Video));
         assert!(!parser.supports_file_type(&FileType::Document));
         assert!(!parser.supports_file_type(&FileType::Unknown));
+    }
+
+    #[test]
+    fn test_parse_metadata_zip_document() {
+        let parser = RexifParser::new();
+
+        // Create a temporary ZIP file
+        let mut temp_file = NamedTempFile::with_suffix(".zip").unwrap();
+        temp_file.write_all(b"PK\x03\x04test zip content").unwrap(); // ZIP header
+
+        let result = parser.parse_metadata(temp_file.path()).unwrap();
+
+        // ZIP files should now be classified as Document for interactive processing
+        assert_eq!(result.file_type, FileType::Document);
+        assert!(result.mime_type.contains("zip") || result.mime_type == "application/zip");
+        assert!(result.datetime_original.is_none()); // Documents don't have EXIF datetime
     }
 
     #[test]
