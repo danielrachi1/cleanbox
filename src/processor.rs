@@ -1,11 +1,11 @@
 use crate::config::{DuplicateHandling, LifeConfig, ProcessingConfig};
 use crate::error::{CleanboxError, Result};
-use crate::metadata::MetadataParser;
-use crate::filesystem::{FileHasher, FileManager};
+use crate::metadata::{MetadataParser, RexifParser};
+use crate::filesystem::{FileHasher, FileManager, StdFileManager};
 use crate::media::{File, FileType};
-use crate::naming::{NamingStrategy, DocumentNamingStrategy};
-use crate::organization::{OrganizationStrategy, DocumentOrganizer};
-use crate::paths::{BasePathResolver};
+use crate::naming::{NamingStrategy, DocumentNamingStrategy, TimestampNamingStrategy};
+use crate::organization::{OrganizationStrategy, DocumentOrganizer, MonthlyOrganizer};
+use crate::paths::{BasePathResolver, LifeDirectoryResolver};
 use crate::interactive::{DocumentInputCollector, UserPrompt};
 use crate::tags::TagDictionary;
 use std::path::{Path, PathBuf};
@@ -366,22 +366,57 @@ where
 
     /// Process media files using the standard media processing pipeline
     fn process_media_files(&self, media_files: &[PathBuf], result: &mut UnifiedProcessingResult) -> Result<()> {
-        // Note: For now, this is a simplified implementation that processes media files
-        // In the future, this would create a proper FileProcessor for media processing
-        // Currently just counts them as processed for the unified workflow demonstration
-        
-        for (i, _file_path) in media_files.iter().enumerate() {
+        if media_files.is_empty() {
+            return Ok(());
+        }
+
+        // Create a FileProcessor with appropriate strategies for media processing
+        // Note: We create new instances since FileProcessor takes ownership
+        let media_processor = FileProcessor::new(
+            RexifParser::new(),
+            StdFileManager::new(),
+            TimestampNamingStrategy::new(),
+            MonthlyOrganizer::new(),
+            LifeDirectoryResolver::new(),
+            self.life_config.to_processing_config(),
+        );
+
+        // Process each media file through the standard pipeline
+        for (i, file_path) in media_files.iter().enumerate() {
             print!("\r  Processing media file {} of {}...", i + 1, media_files.len());
-            // Placeholder - in a real implementation, this would use FileProcessor
-            // to process each media file with EXIF-based naming and organization
-            result.media_processed += 1;
+            
+            match media_processor.process_single_file(file_path) {
+                Ok(()) => {
+                    result.media_processed += 1;
+                }
+                Err(e) => {
+                    result.files_failed += 1;
+                    let error_msg = format!("{}: {}", file_path.display(), e);
+                    result.errors.push(error_msg.clone());
+                    
+                    // Only log error if it's not something we should skip
+                    if !self.should_skip_media_error(&e) {
+                        eprintln!("\n  Error processing {}: {}", file_path.display(), e);
+                    }
+                }
+            }
         }
         
-        if !media_files.is_empty() {
-            println!("\r  ✓ Processed {} media files", result.media_processed);
+        println!("\r  ✓ Processed {} media files", result.media_processed);
+        
+        if result.files_failed > 0 {
+            println!("  {} files failed to process", result.files_failed);
         }
 
         Ok(())
+    }
+
+    /// Check if media processing error should be skipped (not logged as error)
+    fn should_skip_media_error(&self, error: &CleanboxError) -> bool {
+        matches!(
+            error,
+            CleanboxError::UnsupportedFileType(_) | CleanboxError::Exif(_)
+        ) && self.life_config.skip_unsupported_files
     }
 
     /// Process document files using interactive workflow

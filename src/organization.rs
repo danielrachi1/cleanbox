@@ -220,15 +220,16 @@ impl OrganizationStrategy for DocumentOrganizer {
         file: &File,
         base_path: &Path,
     ) -> Result<PathBuf> {
-        // For DocumentOrganizer used as OrganizationStrategy, we expect datetime in metadata
-        // This is a fallback - in practice, document processing would use 
-        // determine_target_directory_from_input directly with DocumentInput
+        // DocumentOrganizer requires datetime information to organize files.
+        // For interactive document processing, use determine_target_directory_from_input instead.
         let datetime = file
             .metadata
             .as_ref()
             .and_then(|m| m.datetime_original.as_ref())
             .ok_or_else(|| {
-                CleanboxError::Exif("DocumentOrganizer: No datetime available, use determine_target_directory_from_input instead".to_string())
+                CleanboxError::InvalidUserInput(
+                    "DocumentOrganizer requires datetime information. Use determine_target_directory_from_input() for interactive document processing".to_string()
+                )
             })?;
 
         let (year, month) = Self::parse_datetime_parts(datetime)?;
@@ -470,6 +471,6 @@ mod tests {
 
         let result = organizer.determine_target_directory(&file, base_path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("DocumentOrganizer"));
+        assert!(result.unwrap_err().to_string().contains("datetime information"));
     }
 }

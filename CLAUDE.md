@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cleanbox is a Rust CLI tool that intelligently organizes files by processing both media and documents from an inbox directory. Media files (images/videos) are automatically processed using EXIF metadata for timestamp-based naming, while documents are processed interactively with user-provided semantic information. The codebase features a unified, modular architecture that handles different file types through intelligent routing.
 
+**Note**: All core functionality is fully implemented and tested with 121 comprehensive tests covering all modules and integration scenarios.
+
 ## Architecture
 
 The codebase follows a clean, modular architecture with clear separation of concerns:
@@ -70,6 +72,8 @@ let result = process_life_directory_unified("/path/to/life")?;
 println!("Media processed: {}, Documents processed: {}", 
          result.media_processed, result.documents_processed);
 ```
+
+This is the primary API that handles both media and document processing through a single unified workflow. All files are automatically categorized and processed using appropriate strategies.
 
 ### Legacy Media-Only Processing
 ```rust

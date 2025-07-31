@@ -129,11 +129,10 @@ impl Default for DocumentNamingStrategy {
 
 impl NamingStrategy for DocumentNamingStrategy {
     fn generate_name(&self, _file: &File) -> Result<String> {
-        // For DocumentNamingStrategy, we expect the file to have document_input in metadata
-        // This is a placeholder implementation - in practice, document processing would use 
-        // generate_name_from_input directly with user-provided DocumentInput
-        Err(CleanboxError::Exif(
-            "DocumentNamingStrategy requires DocumentInput, use generate_name_from_input instead".to_string()
+        // DocumentNamingStrategy cannot generate names automatically since documents require
+        // user-provided semantic information. Use generate_name_from_input() instead.
+        Err(CleanboxError::InvalidUserInput(
+            "DocumentNamingStrategy requires user input via generate_name_from_input() method".to_string()
         ))
     }
 }
@@ -289,6 +288,6 @@ mod tests {
 
         let result = strategy.generate_name(&file);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("DocumentInput"));
+        assert!(result.unwrap_err().to_string().contains("user input"));
     }
 }
