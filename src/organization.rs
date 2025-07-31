@@ -1,5 +1,6 @@
 use crate::error::{CleanboxError, Result};
 use crate::media::File;
+use crate::document::DocumentInput;
 use std::path::{Path, PathBuf};
 
 pub trait OrganizationStrategy {
@@ -164,6 +165,77 @@ impl OrganizationStrategy for CustomOrganizer {
     }
 }
 
+pub struct DocumentOrganizer;
+
+impl DocumentOrganizer {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Determine target directory for documents using DocumentInput date
+    /// Format: base_path/YYYY/MM/
+    pub fn determine_target_directory_from_input(&self, document_input: &DocumentInput, base_path: &Path) -> Result<PathBuf> {
+        // Parse the date from DocumentInput (YYYY-MM-DD format)
+        let date_parts: Vec<&str> = document_input.date.split('-').collect();
+        if date_parts.len() != 3 {
+            return Err(CleanboxError::InvalidDateTime(format!(
+                "Invalid date format in DocumentInput: {}",
+                document_input.date
+            )));
+        }
+
+        let year = date_parts[0];
+        let month = date_parts[1];
+
+        Ok(base_path.join(year).join(month))
+    }
+
+    fn parse_datetime_parts(datetime: &str) -> Result<(String, String)> {
+        let date_part = datetime
+            .split('_')
+            .next()
+            .ok_or_else(|| CleanboxError::InvalidDateTime("Invalid datetime format".to_string()))?;
+
+        let mut date_split = date_part.split('-');
+        let year = date_split.next().ok_or_else(|| {
+            CleanboxError::InvalidDateTime("Invalid date format - missing year".to_string())
+        })?;
+        let month = date_split.next().ok_or_else(|| {
+            CleanboxError::InvalidDateTime("Invalid date format - missing month".to_string())
+        })?;
+
+        Ok((year.to_string(), month.to_string()))
+    }
+}
+
+impl Default for DocumentOrganizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OrganizationStrategy for DocumentOrganizer {
+    fn determine_target_directory(
+        &self,
+        file: &File,
+        base_path: &Path,
+    ) -> Result<PathBuf> {
+        // For DocumentOrganizer used as OrganizationStrategy, we expect datetime in metadata
+        // This is a fallback - in practice, document processing would use 
+        // determine_target_directory_from_input directly with DocumentInput
+        let datetime = file
+            .metadata
+            .as_ref()
+            .and_then(|m| m.datetime_original.as_ref())
+            .ok_or_else(|| {
+                CleanboxError::Exif("DocumentOrganizer: No datetime available, use determine_target_directory_from_input instead".to_string())
+            })?;
+
+        let (year, month) = Self::parse_datetime_parts(datetime)?;
+        Ok(base_path.join(year).join(month))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,5 +397,79 @@ mod tests {
             result.unwrap_err(),
             crate::error::CleanboxError::InvalidDateTime(_)
         ));
+    }
+
+    #[test]
+    fn test_document_organizer_from_input() {
+        let organizer = DocumentOrganizer::new();
+        let document_input = DocumentInput::new(
+            "2025-07-31".to_string(),
+            "quarterly-report".to_string(),
+            vec!["finance".to_string()],
+        );
+        let base_path = Path::new("/documents");
+
+        let result = organizer
+            .determine_target_directory_from_input(&document_input, base_path)
+            .unwrap();
+        assert_eq!(result, PathBuf::from("/documents/2025/07"));
+    }
+
+    #[test]
+    fn test_document_organizer_from_input_different_date() {
+        let organizer = DocumentOrganizer::new();
+        let document_input = DocumentInput::new(
+            "2023-12-01".to_string(),
+            "meeting-notes".to_string(),
+            vec!["meetings".to_string()],
+        );
+        let base_path = Path::new("/life/documents");
+
+        let result = organizer
+            .determine_target_directory_from_input(&document_input, base_path)
+            .unwrap();
+        assert_eq!(result, PathBuf::from("/life/documents/2023/12"));
+    }
+
+    #[test]
+    fn test_document_organizer_invalid_date_format() {
+        let organizer = DocumentOrganizer::new();
+        let document_input = DocumentInput::new(
+            "2025-7-31".to_string(), // Invalid format (single digit month)
+            "test-doc".to_string(),
+            vec!["test".to_string()],
+        );
+        let base_path = Path::new("/documents");
+
+        // This should still work as we only split on '-'
+        let result = organizer
+            .determine_target_directory_from_input(&document_input, base_path)
+            .unwrap();
+        assert_eq!(result, PathBuf::from("/documents/2025/7"));
+    }
+
+    #[test]
+    fn test_document_organizer_fallback_with_file() {
+        let organizer = DocumentOrganizer::new();
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00", "application/pdf");
+        let base_path = Path::new("/documents");
+
+        let result = organizer
+            .determine_target_directory(&file, base_path)
+            .unwrap();
+        assert_eq!(result, PathBuf::from("/documents/2023/12"));
+    }
+
+    #[test]
+    fn test_document_organizer_fallback_no_datetime() {
+        let organizer = DocumentOrganizer::new();
+        let path = PathBuf::from("/test/document.pdf");
+        let metadata = FileMetadata::new("application/pdf".to_string());
+        let file = File::new(&path).with_metadata(metadata);
+        let base_path = Path::new("/documents");
+
+        let result = organizer.determine_target_directory(&file, base_path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("DocumentOrganizer"));
     }
 }

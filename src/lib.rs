@@ -18,12 +18,12 @@ pub use interactive::{ConsolePrompt, DatePrompt, DescriptionPrompt, DocumentInpu
 pub use metadata::{MetadataParser, RexifParser};
 pub use filesystem::{FileManager, StdFileManager};
 pub use media::{File, FileMetadata, FileType};
-pub use naming::{CustomNamingStrategy, NamingStrategy, TimestampNamingStrategy};
+pub use naming::{CustomNamingStrategy, DocumentNamingStrategy, NamingStrategy, TimestampNamingStrategy};
 pub use organization::{
-    CustomOrganizer, FlatOrganizer, MonthlyOrganizer, OrganizationStrategy, YearlyOrganizer,
+    CustomOrganizer, DocumentOrganizer, FlatOrganizer, MonthlyOrganizer, OrganizationStrategy, YearlyOrganizer,
 };
 pub use paths::{BasePathResolver, LifeDirectoryResolver, LifePathResolver};
-pub use processor::{FileProcessor, ProcessingResult};
+pub use processor::{CategorizedFiles, FileProcessor, ProcessingResult, UnifiedProcessor, UnifiedProcessingResult};
 pub use tags::{SimilarTag, TagDictionary, TagResolution, TagResolutionFlow, TagValidator, validate_tag_format};
 
 use std::path::Path;
@@ -31,7 +31,7 @@ use std::path::Path;
 pub fn create_default_processor(
     inbox_path: impl AsRef<Path>,
     media_root: impl AsRef<Path>,
-) -> FileProcessor<RexifParser, StdFileManager, TimestampNamingStrategy, MonthlyOrganizer> {
+) -> FileProcessor<RexifParser, StdFileManager, TimestampNamingStrategy, MonthlyOrganizer, LifeDirectoryResolver> {
     let config = ProcessingConfig::new(
         inbox_path.as_ref().to_path_buf(),
         media_root.as_ref().to_path_buf(),
@@ -42,6 +42,7 @@ pub fn create_default_processor(
         StdFileManager::new(),
         TimestampNamingStrategy::new(),
         MonthlyOrganizer::new(),
+        LifeDirectoryResolver::new(),
         config,
     )
 }
@@ -63,10 +64,25 @@ pub fn process_life_directory(life_path: impl AsRef<Path>) -> Result<ProcessingR
         StdFileManager::new(),
         TimestampNamingStrategy::new(),
         MonthlyOrganizer::new(),
+        LifeDirectoryResolver::new(),
         processing_config,
     );
     
     processor.process_directory()
+}
+
+/// Process life directory with unified workflow for both media and documents
+pub fn process_life_directory_unified(life_path: impl AsRef<Path>) -> Result<UnifiedProcessingResult> {
+    let life_config = LifeConfig::new(life_path.as_ref().to_path_buf());
+    
+    let unified_processor = UnifiedProcessor::new(
+        RexifParser::new(),
+        StdFileManager::new(),
+        interactive::ConsolePrompt::new(),
+        life_config,
+    );
+    
+    unified_processor.process_life_directory()
 }
 
 #[cfg(test)]
@@ -173,5 +189,42 @@ mod tests {
         assert_eq!(life_config.tags_file(), PathBuf::from("/home/user/life/documents/tags.txt"));
         assert_eq!(life_config.hash_length, 8);
         assert!(matches!(life_config.handle_duplicates, DuplicateHandling::Skip));
+    }
+
+    #[test]
+    fn test_unified_processing_api() {
+        // Test that the unified processing API is callable
+        let result = process_life_directory_unified("/nonexistent/life");
+        // Should fail due to nonexistent paths, but the API should be callable
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unified_processing_result() {
+        let mut result = UnifiedProcessingResult::new();
+        assert_eq!(result.total_processed(), 0);
+        
+        result.media_processed = 5;
+        result.documents_processed = 3;
+        assert_eq!(result.total_processed(), 8);
+        
+        assert_eq!(result.files_skipped, 0);
+        assert_eq!(result.files_failed, 0);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_categorized_files() {
+        let mut categorized = CategorizedFiles::new();
+        assert_eq!(categorized.total_count(), 0);
+        
+        categorized.media_files.push(PathBuf::from("/test/image.jpg"));
+        categorized.document_files.push(PathBuf::from("/test/doc.pdf"));
+        categorized.unknown_files.push(PathBuf::from("/test/unknown.xyz"));
+        
+        assert_eq!(categorized.total_count(), 3);
+        assert_eq!(categorized.media_files.len(), 1);
+        assert_eq!(categorized.document_files.len(), 1);
+        assert_eq!(categorized.unknown_files.len(), 1);
     }
 }

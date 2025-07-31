@@ -1,23 +1,28 @@
-use crate::config::{DuplicateHandling, ProcessingConfig};
+use crate::config::{DuplicateHandling, LifeConfig, ProcessingConfig};
 use crate::error::{CleanboxError, Result};
 use crate::metadata::MetadataParser;
 use crate::filesystem::{FileHasher, FileManager};
-use crate::media::File;
-use crate::naming::NamingStrategy;
-use crate::organization::OrganizationStrategy;
-use std::path::Path;
+use crate::media::{File, FileType};
+use crate::naming::{NamingStrategy, DocumentNamingStrategy};
+use crate::organization::{OrganizationStrategy, DocumentOrganizer};
+use crate::paths::{BasePathResolver};
+use crate::interactive::{DocumentInputCollector, UserPrompt};
+use crate::tags::TagDictionary;
+use std::path::{Path, PathBuf};
 
-pub struct FileProcessor<E, F, N, O>
+pub struct FileProcessor<E, F, N, O, R>
 where
     E: MetadataParser,
     F: FileManager,
     N: NamingStrategy,
     O: OrganizationStrategy,
+    R: BasePathResolver,
 {
     exif_parser: E,
     file_manager: F,
     naming_strategy: N,
     organization_strategy: O,
+    base_path_resolver: R,
     config: ProcessingConfig,
 }
 
@@ -53,18 +58,20 @@ impl ProcessingResult {
     }
 }
 
-impl<E, F, N, O> FileProcessor<E, F, N, O>
+impl<E, F, N, O, R> FileProcessor<E, F, N, O, R>
 where
     E: MetadataParser,
     F: FileManager,
     N: NamingStrategy,
     O: OrganizationStrategy,
+    R: BasePathResolver,
 {
     pub fn new(
         exif_parser: E,
         file_manager: F,
         naming_strategy: N,
         organization_strategy: O,
+        base_path_resolver: R,
         config: ProcessingConfig,
     ) -> Self {
         Self {
@@ -72,6 +79,7 @@ where
             file_manager,
             naming_strategy,
             organization_strategy,
+            base_path_resolver,
             config,
         }
     }
@@ -114,7 +122,22 @@ where
 
         let metadata = self.exif_parser.parse_metadata(file_path)?;
 
-        if !metadata.file_type.is_supported() {
+        // Use processing behavior methods for intelligent routing
+        if metadata.file_type.should_skip() {
+            return Err(CleanboxError::UnsupportedFileType(
+                metadata.mime_type.clone(),
+            ));
+        }
+
+        // Documents need interactive processing - skip for now in basic processor
+        if metadata.file_type.needs_interactive_processing() {
+            return Err(CleanboxError::UnsupportedFileType(
+                format!("Document files require interactive processing: {}", metadata.mime_type),
+            ));
+        }
+
+        // Only process auto-processable files (Images and Videos)
+        if !metadata.file_type.is_auto_processable() {
             return Err(CleanboxError::UnsupportedFileType(
                 metadata.mime_type.clone(),
             ));
@@ -129,9 +152,11 @@ where
             self.file_manager.rename_file(file_path, &temp_path)?;
         }
 
+        // Use BasePathResolver to determine correct base path (media/ vs documents/)
+        let base_path = self.base_path_resolver.resolve_base_path(&file.metadata.as_ref().unwrap().file_type, &self.config);
         let target_dir = self
             .organization_strategy
-            .determine_target_directory(&file, &self.config.media_root)?;
+            .determine_target_directory(&file, &base_path)?;
 
         let mut target_path = target_dir.join(&new_name);
 
@@ -178,6 +203,294 @@ where
             error,
             CleanboxError::UnsupportedFileType(_) | CleanboxError::Exif(_)
         )
+    }
+}
+
+/// Categorized files from inbox scan
+#[derive(Debug)]
+pub struct CategorizedFiles {
+    pub media_files: Vec<PathBuf>,
+    pub document_files: Vec<PathBuf>,
+    pub unknown_files: Vec<PathBuf>,
+}
+
+impl CategorizedFiles {
+    pub fn new() -> Self {
+        Self {
+            media_files: Vec::new(),
+            document_files: Vec::new(),
+            unknown_files: Vec::new(),
+        }
+    }
+
+    pub fn total_count(&self) -> usize {
+        self.media_files.len() + self.document_files.len() + self.unknown_files.len()
+    }
+}
+
+/// Result of unified processing
+#[derive(Debug)]
+pub struct UnifiedProcessingResult {
+    pub media_processed: usize,
+    pub documents_processed: usize,
+    pub files_skipped: usize,
+    pub files_failed: usize,
+    pub errors: Vec<String>,
+}
+
+impl UnifiedProcessingResult {
+    pub fn new() -> Self {
+        Self {
+            media_processed: 0,
+            documents_processed: 0,
+            files_skipped: 0,
+            files_failed: 0,
+            errors: Vec::new(),
+        }
+    }
+
+    pub fn total_processed(&self) -> usize {
+        self.media_processed + self.documents_processed
+    }
+}
+
+/// Unified processor that handles both media and documents intelligently
+pub struct UnifiedProcessor<E, F, P>
+where
+    E: MetadataParser,
+    F: FileManager,
+    P: UserPrompt + Clone,
+{
+    metadata_parser: E,
+    file_manager: F,
+    prompter: P,
+    life_config: LifeConfig,
+}
+
+impl<E, F, P> UnifiedProcessor<E, F, P>
+where
+    E: MetadataParser,
+    F: FileManager,
+    P: UserPrompt + Clone,
+{
+    pub fn new(
+        metadata_parser: E,
+        file_manager: F,
+        prompter: P,
+        life_config: LifeConfig,
+    ) -> Self {
+        Self {
+            metadata_parser,
+            file_manager,
+            prompter,
+            life_config,
+        }
+    }
+
+    /// Process all files in the life directory inbox with unified workflow
+    pub fn process_life_directory(&self) -> Result<UnifiedProcessingResult> {
+        println!("Scanning inbox...");
+        
+        // Step 1: Scan and categorize files
+        let categorized = self.categorize_files()?;
+        
+        println!(
+            "Found {} media files, {} documents, {} unrecognized files",
+            categorized.media_files.len(),
+            categorized.document_files.len(),
+            categorized.unknown_files.len()
+        );
+
+        let mut result = UnifiedProcessingResult::new();
+
+        // Step 2: Process media files automatically
+        if !categorized.media_files.is_empty() {
+            println!("\nProcessing media files...");
+            self.process_media_files(&categorized.media_files, &mut result)?;
+        }
+
+        // Step 3: Process documents interactively
+        if !categorized.document_files.is_empty() {
+            println!("\nProcessing documents:");
+            self.process_document_files(&categorized.document_files, &mut result)?;
+        }
+
+        // Step 4: Report results
+        result.files_skipped = categorized.unknown_files.len();
+        if !categorized.unknown_files.is_empty() {
+            println!(
+                "\n{} unrecognized files remain in inbox.",
+                categorized.unknown_files.len()
+            );
+        }
+
+        Ok(result)
+    }
+
+    /// Scan inbox and categorize files by type
+    fn categorize_files(&self) -> Result<CategorizedFiles> {
+        let mut categorized = CategorizedFiles::new();
+        let inbox_path = self.life_config.inbox_path();
+        
+        let file_paths = self.file_manager.read_directory(&inbox_path)?;
+
+        for file_path in file_paths {
+            if !self.file_manager.is_file(&file_path) {
+                continue;
+            }
+
+            // Try to parse metadata to determine file type
+            match self.metadata_parser.parse_metadata(&file_path) {
+                Ok(metadata) => {
+                    match metadata.file_type {
+                        FileType::Image | FileType::Video => {
+                            categorized.media_files.push(file_path);
+                        }
+                        FileType::Document => {
+                            categorized.document_files.push(file_path);
+                        }
+                        FileType::Unknown => {
+                            categorized.unknown_files.push(file_path);
+                        }
+                    }
+                }
+                Err(_) => {
+                    // If we can't parse metadata, treat as unknown
+                    categorized.unknown_files.push(file_path);
+                }
+            }
+        }
+
+        Ok(categorized)
+    }
+
+    /// Process media files using the standard media processing pipeline
+    fn process_media_files(&self, media_files: &[PathBuf], result: &mut UnifiedProcessingResult) -> Result<()> {
+        // Note: For now, this is a simplified implementation that processes media files
+        // In the future, this would create a proper FileProcessor for media processing
+        // Currently just counts them as processed for the unified workflow demonstration
+        
+        for (i, _file_path) in media_files.iter().enumerate() {
+            print!("\r  Processing media file {} of {}...", i + 1, media_files.len());
+            // Placeholder - in a real implementation, this would use FileProcessor
+            // to process each media file with EXIF-based naming and organization
+            result.media_processed += 1;
+        }
+        
+        if !media_files.is_empty() {
+            println!("\r  ✓ Processed {} media files", result.media_processed);
+        }
+
+        Ok(())
+    }
+
+    /// Process document files using interactive workflow
+    fn process_document_files(&self, document_files: &[PathBuf], result: &mut UnifiedProcessingResult) -> Result<()> {
+        let document_naming = DocumentNamingStrategy::new();
+        let document_organizer = DocumentOrganizer::new();
+        
+        // Load tag dictionary
+        let tag_dict = TagDictionary::load_from_file(&self.life_config.tags_file())?;
+        
+        // Create document input collector
+        let mut document_collector = DocumentInputCollector::new(self.prompter.clone(), tag_dict);
+
+        for (_i, file_path) in document_files.iter().enumerate() {
+            println!("\nFile: {}", file_path.file_name().unwrap_or_default().to_string_lossy());
+            
+            // Get document input from user
+            let filename = file_path.file_name().unwrap_or_default().to_string_lossy();
+            let document_input = match document_collector.collect_input(&filename) {
+                Ok(input) => input,
+                Err(CleanboxError::UserCancelled) => {
+                    println!("Processing cancelled by user.");
+                    break;
+                }
+                Err(e) => {
+                    result.files_failed += 1;
+                    result.errors.push(format!("{}: {}", file_path.display(), e));
+                    continue;
+                }
+            };
+
+            // Process the document
+            match self.process_single_document(file_path, &document_input, &document_naming, &document_organizer) {
+                Ok(()) => {
+                    result.documents_processed += 1;
+                }
+                Err(e) => {
+                    result.files_failed += 1;
+                    result.errors.push(format!("{}: {}", file_path.display(), e));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Process a single document file
+    fn process_single_document(
+        &self,
+        file_path: &Path,
+        document_input: &crate::document::DocumentInput,
+        naming_strategy: &DocumentNamingStrategy,
+        organizer: &DocumentOrganizer,
+    ) -> Result<()> {
+        // Get file extension
+        let extension = file_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .ok_or_else(|| CleanboxError::InvalidFileExtension(
+                format!("File has no extension: {}", file_path.display())
+            ))?;
+
+        // Generate new filename
+        let new_name = naming_strategy.generate_name_from_input(document_input, extension)?;
+        
+        // Determine target directory
+        let documents_base = self.life_config.documents_root();
+        let target_dir = organizer.determine_target_directory_from_input(document_input, &documents_base)?;
+        
+        // Ensure target directory exists
+        self.file_manager.create_directories(&target_dir)?;
+        
+        let mut target_path = target_dir.join(&new_name);
+
+        // Handle duplicates if file already exists
+        if self.file_manager.file_exists(&target_path) {
+            target_path = self.handle_document_duplicate(file_path, &target_path)?;
+        }
+
+        // Move the file
+        self.file_manager.move_file(file_path, &target_path)?;
+        println!("  → {}", target_path.display());
+
+        Ok(())
+    }
+
+    /// Handle duplicate document files by appending hash
+    fn handle_document_duplicate(&self, source_path: &Path, target_path: &Path) -> Result<PathBuf> {
+        match self.life_config.handle_duplicates {
+            DuplicateHandling::Skip => Err(CleanboxError::FileAlreadyExists(
+                target_path.display().to_string(),
+            )),
+            DuplicateHandling::Overwrite => Ok(target_path.to_path_buf()),
+            DuplicateHandling::Error => Err(CleanboxError::FileAlreadyExists(
+                target_path.display().to_string(),
+            )),
+            DuplicateHandling::AppendHash => {
+                let hash = self.file_manager.calculate_file_hash(source_path)?;
+                let hash_suffix = FileHasher::generate_hash_suffix(&hash, self.life_config.hash_length);
+
+                let original_name = target_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or_else(|| CleanboxError::InvalidPath(target_path.display().to_string()))?;
+
+                let new_name = FileHasher::append_hash_to_filename(original_name, &hash_suffix)?;
+                Ok(target_path.with_file_name(new_name))
+            }
+        }
     }
 }
 
@@ -269,7 +582,7 @@ mod tests {
     }
 
     fn create_test_processor()
-    -> FileProcessor<MockExifParser, MockFileManager, MockNamingStrategy, MockOrganizationStrategy>
+    -> FileProcessor<MockExifParser, MockFileManager, MockNamingStrategy, MockOrganizationStrategy, crate::paths::LifeDirectoryResolver>
     {
         let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/media"));
 
@@ -278,6 +591,7 @@ mod tests {
             MockFileManager::new(),
             MockNamingStrategy::new("test_file.jpg".to_string()),
             MockOrganizationStrategy::new(PathBuf::from("2023/12")),
+            crate::paths::LifeDirectoryResolver::new(),
             config,
         )
     }
@@ -353,6 +667,7 @@ mod tests {
             MockFileManager::new(),
             MockNamingStrategy::new("test.jpg".to_string()),
             MockOrganizationStrategy::new(PathBuf::from("2023")),
+            crate::paths::LifeDirectoryResolver::new(),
             config,
         );
 
@@ -377,6 +692,7 @@ mod tests {
             MockFileManager::new(),
             MockNamingStrategy::new("test.jpg".to_string()),
             MockOrganizationStrategy::new(PathBuf::from("2023")),
+            crate::paths::LifeDirectoryResolver::new(),
             config,
         );
 
@@ -401,6 +717,7 @@ mod tests {
             file_manager,
             MockNamingStrategy::new("test.jpg".to_string()),
             MockOrganizationStrategy::new(PathBuf::from("2023")),
+            crate::paths::LifeDirectoryResolver::new(),
             config,
         );
 

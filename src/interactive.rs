@@ -9,6 +9,7 @@ pub trait UserPrompt {
     fn prompt_selection(&self, message: &str, options: &[&str]) -> Result<usize>;
 }
 
+#[derive(Clone)]
 pub struct ConsolePrompt;
 
 impl ConsolePrompt {

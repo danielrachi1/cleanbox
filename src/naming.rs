@@ -1,5 +1,6 @@
 use crate::error::{CleanboxError, Result};
 use crate::media::File;
+use crate::document::DocumentInput;
 
 pub trait NamingStrategy {
     fn generate_name(&self, file: &File) -> Result<String>;
@@ -89,6 +90,51 @@ impl CustomNamingStrategy {
 impl NamingStrategy for CustomNamingStrategy {
     fn generate_name(&self, file: &File) -> Result<String> {
         self.replace_placeholders(file)
+    }
+}
+
+pub struct DocumentNamingStrategy;
+
+impl DocumentNamingStrategy {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Generate document filename using DocumentInput
+    /// Format: YYYY-MM-DD_description@@tag1,tag2.ext
+    pub fn generate_name_from_input(&self, document_input: &DocumentInput, extension: &str) -> Result<String> {
+        // Validate the input first
+        document_input.validate()?;
+
+        let mut filename = format!("{}_{}@@", document_input.date, document_input.description);
+        
+        // Add tags separated by commas
+        if !document_input.tags.is_empty() {
+            let tags_str = document_input.tags.join(",");
+            filename.push_str(&tags_str);
+        }
+        
+        filename.push('.');
+        filename.push_str(extension);
+        
+        Ok(filename)
+    }
+}
+
+impl Default for DocumentNamingStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NamingStrategy for DocumentNamingStrategy {
+    fn generate_name(&self, _file: &File) -> Result<String> {
+        // For DocumentNamingStrategy, we expect the file to have document_input in metadata
+        // This is a placeholder implementation - in practice, document processing would use 
+        // generate_name_from_input directly with user-provided DocumentInput
+        Err(CleanboxError::Exif(
+            "DocumentNamingStrategy requires DocumentInput, use generate_name_from_input instead".to_string()
+        ))
     }
 }
 
@@ -193,5 +239,56 @@ mod tests {
 
         let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "{year}.jpg"); // Should leave placeholder as-is
+    }
+
+    #[test]
+    fn test_document_naming_strategy_generate_name_from_input() {
+        let strategy = DocumentNamingStrategy::new();
+        let document_input = DocumentInput::new(
+            "2025-07-31".to_string(),
+            "quarterly-financial-report".to_string(),
+            vec!["finance".to_string(), "reports".to_string()],
+        );
+
+        let result = strategy.generate_name_from_input(&document_input, "pdf").unwrap();
+        assert_eq!(result, "2025-07-31_quarterly-financial-report@@finance,reports.pdf");
+    }
+
+    #[test]
+    fn test_document_naming_strategy_no_tags() {
+        let strategy = DocumentNamingStrategy::new();
+        let document_input = DocumentInput::new(
+            "2025-07-31".to_string(),
+            "meeting-notes".to_string(),
+            vec!["general".to_string()], // Add a tag since validation requires it
+        );
+
+        let result = strategy.generate_name_from_input(&document_input, "txt").unwrap();
+        assert_eq!(result, "2025-07-31_meeting-notes@@general.txt");
+    }
+
+    #[test]
+    fn test_document_naming_strategy_single_tag() {
+        let strategy = DocumentNamingStrategy::new();
+        let document_input = DocumentInput::new(
+            "2025-01-15".to_string(),
+            "project-proposal".to_string(),
+            vec!["business".to_string()],
+        );
+
+        let result = strategy.generate_name_from_input(&document_input, "docx").unwrap();
+        assert_eq!(result, "2025-01-15_project-proposal@@business.docx");
+    }
+
+    #[test]
+    fn test_document_naming_strategy_generate_name_fails() {
+        let strategy = DocumentNamingStrategy::new();
+        let path = PathBuf::from("/test/document.pdf");
+        let metadata = FileMetadata::new("application/pdf".to_string());
+        let file = File::new(&path).with_metadata(metadata);
+
+        let result = strategy.generate_name(&file);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("DocumentInput"));
     }
 }
