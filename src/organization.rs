@@ -1,14 +1,10 @@
+use crate::document::DocumentInput;
 use crate::error::{CleanboxError, Result};
 use crate::media::File;
-use crate::document::DocumentInput;
 use std::path::{Path, PathBuf};
 
 pub trait OrganizationStrategy {
-    fn determine_target_directory(
-        &self,
-        file: &File,
-        base_path: &Path,
-    ) -> Result<PathBuf>;
+    fn determine_target_directory(&self, file: &File, base_path: &Path) -> Result<PathBuf>;
 }
 
 pub struct MonthlyOrganizer;
@@ -43,11 +39,7 @@ impl Default for MonthlyOrganizer {
 }
 
 impl OrganizationStrategy for MonthlyOrganizer {
-    fn determine_target_directory(
-        &self,
-        file: &File,
-        base_path: &Path,
-    ) -> Result<PathBuf> {
+    fn determine_target_directory(&self, file: &File, base_path: &Path) -> Result<PathBuf> {
         let datetime = file
             .metadata
             .as_ref()
@@ -76,11 +68,7 @@ impl Default for FlatOrganizer {
 }
 
 impl OrganizationStrategy for FlatOrganizer {
-    fn determine_target_directory(
-        &self,
-        _file: &File,
-        base_path: &Path,
-    ) -> Result<PathBuf> {
+    fn determine_target_directory(&self, _file: &File, base_path: &Path) -> Result<PathBuf> {
         Ok(base_path.to_path_buf())
     }
 }
@@ -100,11 +88,7 @@ impl Default for YearlyOrganizer {
 }
 
 impl OrganizationStrategy for YearlyOrganizer {
-    fn determine_target_directory(
-        &self,
-        file: &File,
-        base_path: &Path,
-    ) -> Result<PathBuf> {
+    fn determine_target_directory(&self, file: &File, base_path: &Path) -> Result<PathBuf> {
         let datetime = file
             .metadata
             .as_ref()
@@ -156,11 +140,7 @@ impl CustomOrganizer {
 }
 
 impl OrganizationStrategy for CustomOrganizer {
-    fn determine_target_directory(
-        &self,
-        file: &File,
-        base_path: &Path,
-    ) -> Result<PathBuf> {
+    fn determine_target_directory(&self, file: &File, base_path: &Path) -> Result<PathBuf> {
         self.replace_placeholders(file, base_path)
     }
 }
@@ -174,7 +154,11 @@ impl DocumentOrganizer {
 
     /// Determine target directory for documents using DocumentInput date
     /// Format: base_path/YYYY/MM/
-    pub fn determine_target_directory_from_input(&self, document_input: &DocumentInput, base_path: &Path) -> Result<PathBuf> {
+    pub fn determine_target_directory_from_input(
+        &self,
+        document_input: &DocumentInput,
+        base_path: &Path,
+    ) -> Result<PathBuf> {
         // Parse the date from DocumentInput (YYYY-MM-DD format)
         let date_parts: Vec<&str> = document_input.date.split('-').collect();
         if date_parts.len() != 3 {
@@ -215,11 +199,7 @@ impl Default for DocumentOrganizer {
 }
 
 impl OrganizationStrategy for DocumentOrganizer {
-    fn determine_target_directory(
-        &self,
-        file: &File,
-        base_path: &Path,
-    ) -> Result<PathBuf> {
+    fn determine_target_directory(&self, file: &File, base_path: &Path) -> Result<PathBuf> {
         // DocumentOrganizer requires datetime information to organize files.
         // For interactive document processing, use determine_target_directory_from_input instead.
         let datetime = file
@@ -245,8 +225,7 @@ mod tests {
 
     fn create_test_file_with_datetime(datetime: &str, file_type: &str) -> File {
         let path = PathBuf::from("/test/image.jpg");
-        let metadata =
-            FileMetadata::new(file_type.to_string()).with_datetime(datetime.to_string());
+        let metadata = FileMetadata::new(file_type.to_string()).with_datetime(datetime.to_string());
         File::new(&path).with_metadata(metadata)
     }
 
@@ -471,6 +450,11 @@ mod tests {
 
         let result = organizer.determine_target_directory(&file, base_path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("datetime information"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("datetime information")
+        );
     }
 }

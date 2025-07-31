@@ -242,8 +242,14 @@ mod tests {
 
         assert_eq!(config.inbox_path(), PathBuf::from("/home/user/life/inbox"));
         assert_eq!(config.media_root(), PathBuf::from("/home/user/life/media"));
-        assert_eq!(config.documents_root(), PathBuf::from("/home/user/life/documents"));
-        assert_eq!(config.tags_file(), PathBuf::from("/home/user/life/documents/tags.txt"));
+        assert_eq!(
+            config.documents_root(),
+            PathBuf::from("/home/user/life/documents")
+        );
+        assert_eq!(
+            config.tags_file(),
+            PathBuf::from("/home/user/life/documents/tags.txt")
+        );
     }
 
     #[test]
@@ -268,8 +274,14 @@ mod tests {
 
         let processing_config = life_config.to_processing_config();
 
-        assert_eq!(processing_config.inbox_path, PathBuf::from("/home/user/life/inbox"));
-        assert_eq!(processing_config.media_root, PathBuf::from("/home/user/life/media"));
+        assert_eq!(
+            processing_config.inbox_path,
+            PathBuf::from("/home/user/life/inbox")
+        );
+        assert_eq!(
+            processing_config.media_root,
+            PathBuf::from("/home/user/life/media")
+        );
         assert_eq!(processing_config.hash_length, 10);
         assert!(matches!(
             processing_config.handle_duplicates,

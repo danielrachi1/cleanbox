@@ -1,0 +1,110 @@
+CLEANBOX DEBUG DIAGNOSIS: PDF/TXT Files Not Recognized as Documents
+============================================================================
+
+ISSUE SUMMARY
+-------------
+PDF and TXT files in the life-dummy/inbox directory are not being recognized 
+as documents during cleanbox processing. They should be categorized as 
+FileType::Document but are instead being marked as unknown files.
+
+ROOT CAUSE ANALYSIS
+------------------
+The issue is in the metadata parsing pipeline. The RexifParser is being used 
+for ALL file type detection, but it only works with image/video files that 
+contain EXIF metadata.
+
+TECHNICAL FLOW BREAKDOWN
+------------------------
+
+1. File Scanning (processor.rs:343)
+   - UnifiedProcessor.categorize_files() scans life-dummy/inbox/
+   - For each file, calls metadata_parser.parse_metadata()
+
+2. Metadata Parsing Failure (metadata.rs:45)
+   - RexifParser.parse_metadata() calls rexif::parse_file()
+   - rexif::parse_file() FAILS on TXT/PDF files (no EXIF data)
+   - Parse failure throws an error
+
+3. Error Handling (processor.rs:357-361)
+   - When parse_metadata() fails, file is categorized as "unknown"
+   - Files marked as unknown are skipped during processing
+
+4. Missing MIME Detection
+   - The correct FileType::from_mime() logic exists in media.rs:13-27
+   - This logic would properly categorize TXT/PDF as documents
+   - BUT it never gets reached due to the early EXIF parsing failure
+
+FILE ANALYSIS
+-------------
+Examined file: /home/daniel/cleanbox-debug/life-dummy/inbox/open-source.txt
+- Content: Personal essay about open-source development (text file)
+- Expected MIME type: text/plain
+- Expected FileType: Document (per media.rs:22)
+- Current behavior: Fails at EXIF parsing, marked as unknown
+
+CODE REFERENCES
+---------------
+
+PROBLEMATIC CODE:
+- src/metadata.rs:45 - rexif::parse_file() called on all files
+- src/processor.rs:357-361 - Failed parsing → unknown categorization
+
+CORRECT BUT UNREACHABLE CODE:  
+- src/media.rs:19-22 - PDF/TXT → Document mapping (works correctly)
+- src/media.rs:13-27 - FileType::from_mime() (never reached)
+
+EXPECTED VS ACTUAL BEHAVIOR
+---------------------------
+
+EXPECTED:
+1. Detect MIME type first (text/plain, application/pdf)
+2. Use FileType::from_mime() to categorize as Document
+3. Route to interactive document processing workflow
+4. Prompt user for date/description/tags
+5. Generate filename: YYYY-MM-DD_description@@tag1,tag2.ext
+6. Move to documents/YYYY/MM/ directory
+
+ACTUAL:
+1. Attempt EXIF parsing on all files
+2. EXIF parsing fails on TXT/PDF (no EXIF data)
+3. File marked as "unknown" 
+4. File skipped and remains in inbox
+5. User sees "X unrecognized files remain in inbox"
+
+THE CORE ISSUE
+--------------
+The RexifParser assumes all files should have EXIF metadata, but documents 
+(PDF, TXT, DOC, etc.) don't contain EXIF data. The parser should:
+
+1. First detect MIME type using a library like 'infer' 
+2. Only attempt EXIF parsing on image/video files
+3. For documents, create metadata with just MIME type (no datetime)
+4. Let the existing FileType::from_mime() logic handle categorization
+
+DEPENDENCIES ANALYSIS
+--------------------
+The project already includes the 'infer' crate for MIME type detection:
+- Listed in Cargo.toml dependencies
+- Should be used for initial file type detection before EXIF parsing
+
+IMPACT ASSESSMENT
+----------------
+This bug affects ALL document processing:
+- TXT files (text/plain)
+- PDF files (application/pdf) 
+- Word documents (application/msword, application/vnd.openxmlformats-*)
+- Any non-image/video file that should be processed as a document
+
+FILES IN SCOPE
+--------------
+Examined directories:
+- /home/daniel/cleanbox-debug/cleanbox/ (source code)
+- /home/daniel/cleanbox-debug/life-dummy/inbox/ (test files)
+
+Test files found:
+- open-source.txt (affected by this bug)
+- Multiple JPG files (work correctly) 
+- 1 MP4 file (works correctly)
+
+DIAGNOSIS DATE: 2025-07-31
+ANALYZED BY: Claude Code Assistant

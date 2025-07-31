@@ -28,14 +28,16 @@ impl UserPrompt for ConsolePrompt {
     fn prompt_string(&self, message: &str, default: Option<&str>) -> Result<String> {
         loop {
             if let Some(default_val) = default {
-                print!("{} [{}]: ", message, default_val);
+                print!("{message} [{default_val}]: ");
             } else {
-                print!("{}: ", message);
+                print!("{message}: ");
             }
-            io::stdout().flush().map_err(|e| CleanboxError::Io(e))?;
+            io::stdout().flush().map_err(CleanboxError::Io)?;
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input).map_err(|e| CleanboxError::Io(e))?;
+            io::stdin()
+                .read_line(&mut input)
+                .map_err(CleanboxError::Io)?;
             let input = input.trim();
 
             if input.is_empty() {
@@ -54,11 +56,13 @@ impl UserPrompt for ConsolePrompt {
     fn prompt_confirmation(&self, message: &str, default: bool) -> Result<bool> {
         loop {
             let default_str = if default { "Y/n" } else { "y/N" };
-            print!("{} [{}]: ", message, default_str);
-            io::stdout().flush().map_err(|e| CleanboxError::Io(e))?;
+            print!("{message} [{default_str}]: ");
+            io::stdout().flush().map_err(CleanboxError::Io)?;
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input).map_err(|e| CleanboxError::Io(e))?;
+            io::stdin()
+                .read_line(&mut input)
+                .map_err(CleanboxError::Io)?;
             let input = input.trim().to_lowercase();
 
             match input.as_str() {
@@ -75,22 +79,27 @@ impl UserPrompt for ConsolePrompt {
 
     fn prompt_selection(&self, message: &str, options: &[&str]) -> Result<usize> {
         loop {
-            println!("{}", message);
+            println!("{message}");
             for (i, option) in options.iter().enumerate() {
                 println!("  {}. {}", i + 1, option);
             }
             print!("Select (1-{}): ", options.len());
-            io::stdout().flush().map_err(|e| CleanboxError::Io(e))?;
+            io::stdout().flush().map_err(CleanboxError::Io)?;
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input).map_err(|e| CleanboxError::Io(e))?;
-            
+            io::stdin()
+                .read_line(&mut input)
+                .map_err(CleanboxError::Io)?;
+
             match input.trim().parse::<usize>() {
                 Ok(choice) if choice >= 1 && choice <= options.len() => {
                     return Ok(choice - 1); // Convert to 0-based index
                 }
                 _ => {
-                    println!("Invalid selection. Please enter a number between 1 and {}.", options.len());
+                    println!(
+                        "Invalid selection. Please enter a number between 1 and {}.",
+                        options.len()
+                    );
                     continue;
                 }
             }
@@ -109,16 +118,21 @@ impl<P: UserPrompt> DatePrompt<P> {
 
     pub fn prompt_date(&self) -> Result<String> {
         let today = today_date_string();
-        
+
         loop {
-            let input = self.prompter.prompt_string("Date (YYYY-MM-DD)", Some(&today))?;
-            
+            let input = self
+                .prompter
+                .prompt_string("Date (YYYY-MM-DD)", Some(&today))?;
+
             // Validate date format
-            if let Err(e) = DocumentInput::new(input.clone(), "temp".to_string(), vec!["temp".to_string()]).validate_date() {
-                println!("Invalid date format: {}", e);
+            if let Err(e) =
+                DocumentInput::new(input.clone(), "temp".to_string(), vec!["temp".to_string()])
+                    .validate_date()
+            {
+                println!("Invalid date format: {e}");
                 continue;
             }
-            
+
             return Ok(input);
         }
     }
@@ -135,14 +149,22 @@ impl<P: UserPrompt> DescriptionPrompt<P> {
 
     pub fn prompt_description(&self) -> Result<String> {
         loop {
-            let input = self.prompter.prompt_string("Description (kebab-case)", None)?;
-            
+            let input = self
+                .prompter
+                .prompt_string("Description (kebab-case)", None)?;
+
             // Validate description format
-            if let Err(e) = DocumentInput::new("2025-01-01".to_string(), input.clone(), vec!["temp".to_string()]).validate_description() {
-                println!("Invalid description format: {}", e);
+            if let Err(e) = DocumentInput::new(
+                "2025-01-01".to_string(),
+                input.clone(),
+                vec!["temp".to_string()],
+            )
+            .validate_description()
+            {
+                println!("Invalid description format: {e}");
                 continue;
             }
-            
+
             return Ok(input);
         }
     }
@@ -163,12 +185,14 @@ impl<P: UserPrompt> SmartTagSelector<P> {
 
     pub fn prompt_tags(&mut self) -> Result<Vec<String>> {
         let mut selected_tags = Vec::new();
-        
-        println!("Enter tags (comma-separated or one at a time). Press Enter with empty input when done:");
-        
+
+        println!(
+            "Enter tags (comma-separated or one at a time). Press Enter with empty input when done:"
+        );
+
         loop {
             let input = self.prompter.prompt_string("Tags", None)?;
-            
+
             if input.is_empty() {
                 if selected_tags.is_empty() {
                     println!("At least one tag is required.");
@@ -177,21 +201,25 @@ impl<P: UserPrompt> SmartTagSelector<P> {
                     break;
                 }
             }
-            
+
             // Parse comma-separated tags
-            let input_tags: Vec<&str> = input.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-            
+            let input_tags: Vec<&str> = input
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+
             for tag in input_tags {
                 if let Some(resolved_tag) = self.resolve_single_tag(tag)? {
                     if !selected_tags.contains(&resolved_tag) {
                         selected_tags.push(resolved_tag);
                         println!("Added tag: {}", selected_tags.last().unwrap());
                     } else {
-                        println!("Tag '{}' already added.", resolved_tag);
+                        println!("Tag '{resolved_tag}' already added.");
                     }
                 }
             }
-            
+
             if !selected_tags.is_empty() {
                 println!("Current tags: {}", selected_tags.join(", "));
                 if self.prompter.prompt_confirmation("Add more tags?", false)? {
@@ -201,30 +229,34 @@ impl<P: UserPrompt> SmartTagSelector<P> {
                 }
             }
         }
-        
+
         Ok(selected_tags)
     }
-    
+
     fn resolve_single_tag(&mut self, tag: &str) -> Result<Option<String>> {
         match self.flow.resolve_tag(tag) {
-            TagResolution::ExactMatch(matched_tag) => {
-                Ok(Some(matched_tag))
-            }
-            TagResolution::SimilarFound { input, similar, can_create } => {
-                println!("Tag '{}' not found. Similar tags:", input);
-                
+            TagResolution::ExactMatch(matched_tag) => Ok(Some(matched_tag)),
+            TagResolution::SimilarFound {
+                input,
+                similar,
+                can_create,
+            } => {
+                println!("Tag '{input}' not found. Similar tags:");
+
                 let mut options: Vec<String> = similar.iter().map(|s| s.tag.clone()).collect();
                 if can_create {
-                    options.push(format!("Create new tag '{}'", input));
+                    options.push(format!("Create new tag '{input}'"));
                 }
-                
+
                 let option_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
-                let selection = self.prompter.prompt_selection("Choose an option:", &option_refs)?;
-                
+                let selection = self
+                    .prompter
+                    .prompt_selection("Choose an option:", &option_refs)?;
+
                 if can_create && selection == options.len() - 1 {
                     // User chose to create new tag
                     self.flow.dictionary_mut().add_tag(input.to_string())?;
-                    println!("Created new tag: {}", input);
+                    println!("Created new tag: {input}");
                     Ok(Some(input.to_string()))
                 } else {
                     // User chose an existing similar tag
@@ -233,16 +265,21 @@ impl<P: UserPrompt> SmartTagSelector<P> {
             }
             TagResolution::NoMatch { input, can_create } => {
                 if can_create {
-                    if self.prompter.prompt_confirmation(&format!("Create new tag '{}'?", input), true)? {
+                    if self
+                        .prompter
+                        .prompt_confirmation(&format!("Create new tag '{input}'?"), true)?
+                    {
                         self.flow.dictionary_mut().add_tag(input.to_string())?;
-                        println!("Created new tag: {}", input);
+                        println!("Created new tag: {input}");
                         Ok(Some(input.to_string()))
                     } else {
                         Ok(None)
                     }
                 } else {
-                    println!("Invalid tag format: {}", input);
-                    println!("Tags must be lowercase, kebab-case, and contain only ASCII characters.");
+                    println!("Invalid tag format: {input}");
+                    println!(
+                        "Tags must be lowercase, kebab-case, and contain only ASCII characters."
+                    );
                     Ok(None)
                 }
             }
@@ -279,8 +316,13 @@ impl<P: UserPrompt + Clone> DocumentInputCollector<P> {
             tag_selector: SmartTagSelector::new(prompter, tag_dictionary),
         }
     }
-    
-    pub fn new_separate(date_prompter: P, desc_prompter: P, tag_prompter: P, tag_dictionary: TagDictionary) -> Self {
+
+    pub fn new_separate(
+        date_prompter: P,
+        desc_prompter: P,
+        tag_prompter: P,
+        tag_dictionary: TagDictionary,
+    ) -> Self {
         Self {
             date_prompt: DatePrompt::new(date_prompter),
             description_prompt: DescriptionPrompt::new(desc_prompter),
@@ -289,15 +331,15 @@ impl<P: UserPrompt + Clone> DocumentInputCollector<P> {
     }
 
     pub fn collect_input(&mut self, filename: &str) -> Result<DocumentInput> {
-        println!("\nProcessing document: {}", filename);
-        
+        println!("\nProcessing document: {filename}");
+
         let date = self.date_prompt.prompt_date()?;
         let description = self.description_prompt.prompt_description()?;
         let tags = self.tag_selector.prompt_tags()?;
-        
+
         let input = DocumentInput::new(date, description, tags);
         input.validate()?; // Final validation
-        
+
         Ok(input)
     }
 
@@ -332,20 +374,25 @@ impl ProgressIndicator {
         } else {
             100
         };
-        
+
         let bar_length = 40;
         let filled = (current * bar_length) / self.total.max(1);
         let bar = "█".repeat(filled) + &"░".repeat(bar_length - filled);
-        
-        print!("\r{}: {} {}/{} ({}%)", 
-               self.task_name, bar, current, self.total, percentage);
+
+        print!(
+            "\r{}: {} {}/{} ({}%)",
+            self.task_name, bar, current, self.total, percentage
+        );
         io::stdout().flush().unwrap_or(());
     }
 
     pub fn finish(&mut self) {
         self.update(self.total);
         println!(); // New line after progress bar
-        println!("Completed {}: {}/{} files", self.task_name, self.total, self.total);
+        println!(
+            "Completed {}: {}/{} files",
+            self.task_name, self.total, self.total
+        );
     }
 
     pub fn increment(&mut self) {
@@ -421,7 +468,9 @@ mod tests {
                     Ok(response)
                 }
             } else {
-                Err(CleanboxError::InvalidUserInput("No more mock responses".to_string()))
+                Err(CleanboxError::InvalidUserInput(
+                    "No more mock responses".to_string(),
+                ))
             }
         }
 
@@ -444,10 +493,14 @@ mod tests {
                 if response < options.len() {
                     Ok(response)
                 } else {
-                    Err(CleanboxError::InvalidUserInput("Invalid selection".to_string()))
+                    Err(CleanboxError::InvalidUserInput(
+                        "Invalid selection".to_string(),
+                    ))
                 }
             } else {
-                Err(CleanboxError::InvalidUserInput("No more mock responses".to_string()))
+                Err(CleanboxError::InvalidUserInput(
+                    "No more mock responses".to_string(),
+                ))
             }
         }
     }
@@ -456,7 +509,7 @@ mod tests {
     fn test_date_prompt_with_default() {
         let mock = MockPrompt::new().with_strings(vec!["".to_string()]); // Empty input, should use default
         let date_prompt = DatePrompt::new(mock);
-        
+
         let result = date_prompt.prompt_date().unwrap();
         assert_eq!(result.len(), 10); // YYYY-MM-DD format
         assert!(result.contains("-"));
@@ -466,7 +519,7 @@ mod tests {
     fn test_date_prompt_with_custom_date() {
         let mock = MockPrompt::new().with_strings(vec!["2025-06-15".to_string()]);
         let date_prompt = DatePrompt::new(mock);
-        
+
         let result = date_prompt.prompt_date().unwrap();
         assert_eq!(result, "2025-06-15");
     }
@@ -475,7 +528,7 @@ mod tests {
     fn test_description_prompt() {
         let mock = MockPrompt::new().with_strings(vec!["quarterly-report".to_string()]);
         let description_prompt = DescriptionPrompt::new(mock);
-        
+
         let result = description_prompt.prompt_description().unwrap();
         assert_eq!(result, "quarterly-report");
     }
@@ -483,13 +536,13 @@ mod tests {
     #[test]
     fn test_progress_indicator() {
         let mut progress = ProgressIndicator::new(10, "Test Task".to_string());
-        
+
         assert_eq!(progress.current, 0);
         assert_eq!(progress.total, 10);
-        
+
         progress.update(5);
         assert_eq!(progress.current, 5);
-        
+
         progress.increment();
         assert_eq!(progress.current, 6);
     }
@@ -499,10 +552,10 @@ mod tests {
         let mut dict = TagDictionary::new();
         dict.add_tag("finance".to_string()).unwrap();
         dict.add_tag("reports".to_string()).unwrap();
-        
+
         let mock = MockPrompt::new().with_strings(vec!["finance".to_string(), "".to_string()]);
         let mut selector = SmartTagSelector::new(mock, dict);
-        
+
         let result = selector.prompt_tags().unwrap();
         assert_eq!(result, vec!["finance"]);
     }
@@ -511,18 +564,18 @@ mod tests {
     fn test_document_input_collector_components() {
         let mut dict = TagDictionary::new();
         dict.add_tag("finance".to_string()).unwrap();
-        
+
         // Test each component separately first
         let date_mock = MockPrompt::new().with_strings(vec!["2025-07-31".to_string()]);
         let date_prompt = DatePrompt::new(date_mock);
         let date_result = date_prompt.prompt_date().unwrap();
         assert_eq!(date_result, "2025-07-31");
-        
+
         let desc_mock = MockPrompt::new().with_strings(vec!["quarterly-report".to_string()]);
         let desc_prompt = DescriptionPrompt::new(desc_mock);
         let desc_result = desc_prompt.prompt_description().unwrap();
         assert_eq!(desc_result, "quarterly-report");
-        
+
         // Test tag selector separately
         let tag_mock = MockPrompt::new()
             .with_strings(vec!["finance".to_string(), "".to_string()])
@@ -531,22 +584,23 @@ mod tests {
         let tag_result = tag_selector.prompt_tags().unwrap();
         assert_eq!(tag_result, vec!["finance"]);
     }
-    
+
     #[test]
     fn test_document_input_collector_full() {
         let mut dict = TagDictionary::new();
         dict.add_tag("finance".to_string()).unwrap();
-        
+
         // Create separate prompters for each component to avoid response conflicts
         let date_mock = MockPrompt::new().with_strings(vec!["2025-07-31".to_string()]);
         let desc_mock = MockPrompt::new().with_strings(vec!["quarterly-report".to_string()]);
         let tag_mock = MockPrompt::new()
             .with_strings(vec!["finance".to_string(), "".to_string()])
             .with_confirmations(vec![false]);
-        
-        let mut collector = DocumentInputCollector::new_separate(date_mock, desc_mock, tag_mock, dict);
+
+        let mut collector =
+            DocumentInputCollector::new_separate(date_mock, desc_mock, tag_mock, dict);
         let result = collector.collect_input("test.pdf").unwrap();
-        
+
         assert_eq!(result.date, "2025-07-31");
         assert_eq!(result.description, "quarterly-report");
         assert_eq!(result.tags, vec!["finance"]);

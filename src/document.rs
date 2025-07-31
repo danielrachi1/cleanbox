@@ -44,10 +44,9 @@ impl DocumentInput {
         let year = parts[0]
             .parse::<u32>()
             .map_err(|_| CleanboxError::InvalidUserInput(format!("Invalid year: {}", parts[0])))?;
-        if year < 1900 || year > 2100 {
+        if !(1900..=2100).contains(&year) {
             return Err(CleanboxError::InvalidUserInput(format!(
-                "Year must be between 1900-2100, got: {}",
-                year
+                "Year must be between 1900-2100, got: {year}"
             )));
         }
 
@@ -55,10 +54,9 @@ impl DocumentInput {
         let month = parts[1]
             .parse::<u32>()
             .map_err(|_| CleanboxError::InvalidUserInput(format!("Invalid month: {}", parts[1])))?;
-        if month < 1 || month > 12 {
+        if !(1..=12).contains(&month) {
             return Err(CleanboxError::InvalidUserInput(format!(
-                "Month must be between 01-12, got: {:02}",
-                month
+                "Month must be between 01-12, got: {month:02}"
             )));
         }
 
@@ -66,10 +64,9 @@ impl DocumentInput {
         let day = parts[2]
             .parse::<u32>()
             .map_err(|_| CleanboxError::InvalidUserInput(format!("Invalid day: {}", parts[2])))?;
-        if day < 1 || day > 31 {
+        if !(1..=31).contains(&day) {
             return Err(CleanboxError::InvalidUserInput(format!(
-                "Day must be between 01-31, got: {:02}",
-                day
+                "Day must be between 01-31, got: {day:02}"
             )));
         }
 
@@ -134,24 +131,21 @@ impl DocumentInput {
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
             {
                 return Err(CleanboxError::InvalidUserInput(format!(
-                    "Tag must be in kebab-case (lowercase, numbers, hyphens only): {}",
-                    tag
+                    "Tag must be in kebab-case (lowercase, numbers, hyphens only): {tag}"
                 )));
             }
 
             // Must not start or end with hyphen
             if tag.starts_with('-') || tag.ends_with('-') {
                 return Err(CleanboxError::InvalidUserInput(format!(
-                    "Tag cannot start or end with hyphen: {}",
-                    tag
+                    "Tag cannot start or end with hyphen: {tag}"
                 )));
             }
 
             // Must not have consecutive hyphens
             if tag.contains("--") {
                 return Err(CleanboxError::InvalidUserInput(format!(
-                    "Tag cannot contain consecutive hyphens: {}",
-                    tag
+                    "Tag cannot contain consecutive hyphens: {tag}"
                 )));
             }
         }
@@ -172,22 +166,27 @@ impl DocumentInput {
 // Helper to parse today's date in YYYY-MM-DD format
 pub fn today_date_string() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
-    
+
     // Simple date calculation (days since epoch)
     let days_since_epoch = now.as_secs() / (24 * 60 * 60);
     let days_since_1970 = days_since_epoch as i32;
-    
+
     // Approximate date calculation (good enough for default values)
     let year = 1970 + (days_since_1970 / 365);
     let day_of_year = days_since_1970 % 365;
     let month = (day_of_year / 30) + 1;
     let day_of_month = (day_of_year % 30) + 1;
-    
-    format!("{:04}-{:02}-{:02}", year, month.min(12), day_of_month.min(31))
+
+    format!(
+        "{:04}-{:02}-{:02}",
+        year,
+        month.min(12),
+        day_of_month.min(31)
+    )
 }
 
 #[cfg(test)]
@@ -221,7 +220,7 @@ mod tests {
     fn test_invalid_date_formats() {
         let test_cases = vec![
             ("2025-1-15", "Month must be 2 digits"),
-            ("25-01-15", "Year must be 4 digits"), 
+            ("25-01-15", "Year must be 4 digits"),
             ("2025/01/15", "Must use hyphens"),
             ("2025-13-15", "Invalid month"),
             ("2025-01-32", "Invalid day"),
@@ -235,7 +234,11 @@ mod tests {
                 "test".to_string(),
                 vec!["tag".to_string()],
             );
-            assert!(input.validate_date().is_err(), "Should reject: {}", invalid_date);
+            assert!(
+                input.validate_date().is_err(),
+                "Should reject: {}",
+                invalid_date
+            );
         }
     }
 
@@ -255,7 +258,11 @@ mod tests {
                 desc.to_string(),
                 vec!["tag".to_string()],
             );
-            assert!(input.validate_description().is_ok(), "Should accept: {}", desc);
+            assert!(
+                input.validate_description().is_ok(),
+                "Should accept: {}",
+                desc
+            );
         }
     }
 
@@ -278,7 +285,11 @@ mod tests {
                 invalid_desc.to_string(),
                 vec!["tag".to_string()],
             );
-            assert!(input.validate_description().is_err(), "Should reject: {}", invalid_desc);
+            assert!(
+                input.validate_description().is_err(),
+                "Should reject: {}",
+                invalid_desc
+            );
         }
     }
 
@@ -309,11 +320,8 @@ mod tests {
         ];
 
         for (invalid_tags, _reason) in test_cases {
-            let input = DocumentInput::new(
-                "2025-01-15".to_string(),
-                "test".to_string(),
-                invalid_tags,
-            );
+            let input =
+                DocumentInput::new("2025-01-15".to_string(), "test".to_string(), invalid_tags);
             assert!(input.validate_tags().is_err());
         }
     }
@@ -356,7 +364,7 @@ mod tests {
         assert_eq!(today.len(), 10);
         assert_eq!(today.chars().nth(4).unwrap(), '-');
         assert_eq!(today.chars().nth(7).unwrap(), '-');
-        
+
         // Should be parseable as a valid DocumentInput date
         let input = DocumentInput::new(today, "test".to_string(), vec!["tag".to_string()]);
         assert!(input.validate_date().is_ok());

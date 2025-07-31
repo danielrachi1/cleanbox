@@ -104,7 +104,10 @@ mod tests {
         assert_eq!(format!("{cancel_err}"), "Operation cancelled by user");
 
         let input_err = CleanboxError::InvalidUserInput("bad date format".to_string());
-        assert_eq!(format!("{input_err}"), "Invalid user input: bad date format");
+        assert_eq!(
+            format!("{input_err}"),
+            "Invalid user input: bad date format"
+        );
 
         let tag_err = CleanboxError::TagDictionaryCorrupted("malformed tags.txt".to_string());
         assert_eq!(

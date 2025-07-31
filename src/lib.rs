@@ -1,10 +1,10 @@
 pub mod config;
 pub mod document;
 pub mod error;
-pub mod interactive;
-pub mod metadata;
 pub mod filesystem;
+pub mod interactive;
 pub mod media;
+pub mod metadata;
 pub mod naming;
 pub mod organization;
 pub mod paths;
@@ -14,24 +14,40 @@ pub mod tags;
 pub use config::{DuplicateHandling, LifeConfig, ProcessingConfig};
 pub use document::{DocumentInput, today_date_string};
 pub use error::{CleanboxError, Result};
-pub use interactive::{ConsolePrompt, DatePrompt, DescriptionPrompt, DocumentInputCollector, ProgressIndicator, SmartTagSelector, UserPrompt};
-pub use metadata::{MetadataParser, RexifParser};
 pub use filesystem::{FileManager, StdFileManager};
+pub use interactive::{
+    ConsolePrompt, DatePrompt, DescriptionPrompt, DocumentInputCollector, ProgressIndicator,
+    SmartTagSelector, UserPrompt,
+};
 pub use media::{File, FileMetadata, FileType};
-pub use naming::{CustomNamingStrategy, DocumentNamingStrategy, NamingStrategy, TimestampNamingStrategy};
+pub use metadata::{MetadataParser, RexifParser};
+pub use naming::{
+    CustomNamingStrategy, DocumentNamingStrategy, NamingStrategy, TimestampNamingStrategy,
+};
 pub use organization::{
-    CustomOrganizer, DocumentOrganizer, FlatOrganizer, MonthlyOrganizer, OrganizationStrategy, YearlyOrganizer,
+    CustomOrganizer, DocumentOrganizer, FlatOrganizer, MonthlyOrganizer, OrganizationStrategy,
+    YearlyOrganizer,
 };
 pub use paths::{BasePathResolver, LifeDirectoryResolver, LifePathResolver};
-pub use processor::{CategorizedFiles, FileProcessor, ProcessingResult, UnifiedProcessor, UnifiedProcessingResult};
-pub use tags::{SimilarTag, TagDictionary, TagResolution, TagResolutionFlow, TagValidator, validate_tag_format};
+pub use processor::{
+    CategorizedFiles, FileProcessor, ProcessingResult, UnifiedProcessingResult, UnifiedProcessor,
+};
+pub use tags::{
+    SimilarTag, TagDictionary, TagResolution, TagResolutionFlow, TagValidator, validate_tag_format,
+};
 
 use std::path::Path;
 
 pub fn create_default_processor(
     inbox_path: impl AsRef<Path>,
     media_root: impl AsRef<Path>,
-) -> FileProcessor<RexifParser, StdFileManager, TimestampNamingStrategy, MonthlyOrganizer, LifeDirectoryResolver> {
+) -> FileProcessor<
+    RexifParser,
+    StdFileManager,
+    TimestampNamingStrategy,
+    MonthlyOrganizer,
+    LifeDirectoryResolver,
+> {
     let config = ProcessingConfig::new(
         inbox_path.as_ref().to_path_buf(),
         media_root.as_ref().to_path_buf(),
@@ -58,7 +74,7 @@ pub fn process_media_directory(
 pub fn process_life_directory(life_path: impl AsRef<Path>) -> Result<ProcessingResult> {
     let life_config = LifeConfig::new(life_path.as_ref().to_path_buf());
     let processing_config = life_config.to_processing_config();
-    
+
     let processor = FileProcessor::new(
         RexifParser::new(),
         StdFileManager::new(),
@@ -67,21 +83,23 @@ pub fn process_life_directory(life_path: impl AsRef<Path>) -> Result<ProcessingR
         LifeDirectoryResolver::new(),
         processing_config,
     );
-    
+
     processor.process_directory()
 }
 
 /// Process life directory with unified workflow for both media and documents
-pub fn process_life_directory_unified(life_path: impl AsRef<Path>) -> Result<UnifiedProcessingResult> {
+pub fn process_life_directory_unified(
+    life_path: impl AsRef<Path>,
+) -> Result<UnifiedProcessingResult> {
     let life_config = LifeConfig::new(life_path.as_ref().to_path_buf());
-    
+
     let unified_processor = UnifiedProcessor::new(
         RexifParser::new(),
         StdFileManager::new(),
         interactive::ConsolePrompt::new(),
         life_config,
     );
-    
+
     unified_processor.process_life_directory()
 }
 
@@ -181,14 +199,29 @@ mod tests {
         let life_config = LifeConfig::new(PathBuf::from("/home/user/life"))
             .with_hash_length(8)
             .with_duplicate_handling(DuplicateHandling::Skip);
-            
+
         assert_eq!(life_config.life_path, PathBuf::from("/home/user/life"));
-        assert_eq!(life_config.inbox_path(), PathBuf::from("/home/user/life/inbox"));
-        assert_eq!(life_config.media_root(), PathBuf::from("/home/user/life/media"));
-        assert_eq!(life_config.documents_root(), PathBuf::from("/home/user/life/documents"));
-        assert_eq!(life_config.tags_file(), PathBuf::from("/home/user/life/documents/tags.txt"));
+        assert_eq!(
+            life_config.inbox_path(),
+            PathBuf::from("/home/user/life/inbox")
+        );
+        assert_eq!(
+            life_config.media_root(),
+            PathBuf::from("/home/user/life/media")
+        );
+        assert_eq!(
+            life_config.documents_root(),
+            PathBuf::from("/home/user/life/documents")
+        );
+        assert_eq!(
+            life_config.tags_file(),
+            PathBuf::from("/home/user/life/documents/tags.txt")
+        );
         assert_eq!(life_config.hash_length, 8);
-        assert!(matches!(life_config.handle_duplicates, DuplicateHandling::Skip));
+        assert!(matches!(
+            life_config.handle_duplicates,
+            DuplicateHandling::Skip
+        ));
     }
 
     #[test]
@@ -203,11 +236,11 @@ mod tests {
     fn test_unified_processing_result() {
         let mut result = UnifiedProcessingResult::new();
         assert_eq!(result.total_processed(), 0);
-        
+
         result.media_processed = 5;
         result.documents_processed = 3;
         assert_eq!(result.total_processed(), 8);
-        
+
         assert_eq!(result.files_skipped, 0);
         assert_eq!(result.files_failed, 0);
         assert!(result.errors.is_empty());
@@ -217,11 +250,17 @@ mod tests {
     fn test_categorized_files() {
         let mut categorized = CategorizedFiles::new();
         assert_eq!(categorized.total_count(), 0);
-        
-        categorized.media_files.push(PathBuf::from("/test/image.jpg"));
-        categorized.document_files.push(PathBuf::from("/test/doc.pdf"));
-        categorized.unknown_files.push(PathBuf::from("/test/unknown.xyz"));
-        
+
+        categorized
+            .media_files
+            .push(PathBuf::from("/test/image.jpg"));
+        categorized
+            .document_files
+            .push(PathBuf::from("/test/doc.pdf"));
+        categorized
+            .unknown_files
+            .push(PathBuf::from("/test/unknown.xyz"));
+
         assert_eq!(categorized.total_count(), 3);
         assert_eq!(categorized.media_files.len(), 1);
         assert_eq!(categorized.document_files.len(), 1);

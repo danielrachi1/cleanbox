@@ -1,6 +1,6 @@
+use crate::document::DocumentInput;
 use crate::error::{CleanboxError, Result};
 use crate::media::File;
-use crate::document::DocumentInput;
 
 pub trait NamingStrategy {
     fn generate_name(&self, file: &File) -> Result<String>;
@@ -102,21 +102,25 @@ impl DocumentNamingStrategy {
 
     /// Generate document filename using DocumentInput
     /// Format: YYYY-MM-DD_description@@tag1,tag2.ext
-    pub fn generate_name_from_input(&self, document_input: &DocumentInput, extension: &str) -> Result<String> {
+    pub fn generate_name_from_input(
+        &self,
+        document_input: &DocumentInput,
+        extension: &str,
+    ) -> Result<String> {
         // Validate the input first
         document_input.validate()?;
 
         let mut filename = format!("{}_{}@@", document_input.date, document_input.description);
-        
+
         // Add tags separated by commas
         if !document_input.tags.is_empty() {
             let tags_str = document_input.tags.join(",");
             filename.push_str(&tags_str);
         }
-        
+
         filename.push('.');
         filename.push_str(extension);
-        
+
         Ok(filename)
     }
 }
@@ -132,7 +136,8 @@ impl NamingStrategy for DocumentNamingStrategy {
         // DocumentNamingStrategy cannot generate names automatically since documents require
         // user-provided semantic information. Use generate_name_from_input() instead.
         Err(CleanboxError::InvalidUserInput(
-            "DocumentNamingStrategy requires user input via generate_name_from_input() method".to_string()
+            "DocumentNamingStrategy requires user input via generate_name_from_input() method"
+                .to_string(),
         ))
     }
 }
@@ -249,8 +254,13 @@ mod tests {
             vec!["finance".to_string(), "reports".to_string()],
         );
 
-        let result = strategy.generate_name_from_input(&document_input, "pdf").unwrap();
-        assert_eq!(result, "2025-07-31_quarterly-financial-report@@finance,reports.pdf");
+        let result = strategy
+            .generate_name_from_input(&document_input, "pdf")
+            .unwrap();
+        assert_eq!(
+            result,
+            "2025-07-31_quarterly-financial-report@@finance,reports.pdf"
+        );
     }
 
     #[test]
@@ -262,7 +272,9 @@ mod tests {
             vec!["general".to_string()], // Add a tag since validation requires it
         );
 
-        let result = strategy.generate_name_from_input(&document_input, "txt").unwrap();
+        let result = strategy
+            .generate_name_from_input(&document_input, "txt")
+            .unwrap();
         assert_eq!(result, "2025-07-31_meeting-notes@@general.txt");
     }
 
@@ -275,7 +287,9 @@ mod tests {
             vec!["business".to_string()],
         );
 
-        let result = strategy.generate_name_from_input(&document_input, "docx").unwrap();
+        let result = strategy
+            .generate_name_from_input(&document_input, "docx")
+            .unwrap();
         assert_eq!(result, "2025-01-15_project-proposal@@business.docx");
     }
 

@@ -19,7 +19,8 @@ impl FileType {
         } else if mime_lower.starts_with("application/pdf")
             || mime_lower.starts_with("application/msword")
             || mime_lower.starts_with("application/vnd.openxmlformats")
-            || mime_lower.starts_with("text/") {
+            || mime_lower.starts_with("text/")
+        {
             FileType::Document
         } else {
             FileType::Unknown
@@ -145,11 +146,20 @@ mod tests {
         assert_eq!(FileType::from_mime("video/mp4"), FileType::Video);
         assert_eq!(FileType::from_mime("VIDEO/MOV"), FileType::Video);
         assert_eq!(FileType::from_mime("application/pdf"), FileType::Document);
-        assert_eq!(FileType::from_mime("application/msword"), FileType::Document);
-        assert_eq!(FileType::from_mime("application/vnd.openxmlformats-wordprocessingml.document"), FileType::Document);
+        assert_eq!(
+            FileType::from_mime("application/msword"),
+            FileType::Document
+        );
+        assert_eq!(
+            FileType::from_mime("application/vnd.openxmlformats-wordprocessingml.document"),
+            FileType::Document
+        );
         assert_eq!(FileType::from_mime("text/plain"), FileType::Document);
         assert_eq!(FileType::from_mime("text/csv"), FileType::Document);
-        assert_eq!(FileType::from_mime("application/unknown"), FileType::Unknown);
+        assert_eq!(
+            FileType::from_mime("application/unknown"),
+            FileType::Unknown
+        );
         assert_eq!(FileType::from_mime(""), FileType::Unknown);
     }
 

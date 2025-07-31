@@ -25,13 +25,13 @@ impl TagDictionary {
         })?;
 
         let mut tags = HashSet::new();
-        
+
         for line in content.lines() {
             let tag = line.trim();
             if tag.is_empty() {
                 continue; // Skip empty lines
             }
-            
+
             // Validate each tag from the file
             validate_tag_format(tag)?;
             tags.insert(tag.to_string());
@@ -43,9 +43,9 @@ impl TagDictionary {
     pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let mut tags: Vec<&str> = self.tags.iter().map(|s| s.as_str()).collect();
         tags.sort(); // Save in alphabetical order
-        
+
         let content = tags.join("\n") + "\n"; // Add final newline
-        
+
         fs::write(&path, content).map_err(|e| {
             CleanboxError::TagDictionaryCorrupted(format!(
                 "Cannot write tags file at {}: {}",
@@ -78,7 +78,7 @@ impl TagDictionary {
             .map(|tag| {
                 let distance = strsim::levenshtein(query, tag);
                 let normalized_distance = distance as f64 / tag.len().max(query.len()) as f64;
-                
+
                 SimilarTag {
                     tag: tag.clone(),
                     distance,
@@ -94,7 +94,7 @@ impl TagDictionary {
         // Sort by similarity (highest first)
         similar.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
         similar.truncate(max_results);
-        
+
         similar
     }
 
@@ -116,8 +116,8 @@ impl Default for TagDictionary {
 #[derive(Debug, Clone)]
 pub struct SimilarTag {
     pub tag: String,
-    pub distance: usize,      // Edit distance
-    pub similarity: f64,      // Normalized similarity (0.0-1.0)
+    pub distance: usize, // Edit distance
+    pub similarity: f64, // Normalized similarity (0.0-1.0)
 }
 
 pub trait TagValidator {
@@ -153,32 +153,28 @@ pub fn validate_tag_format(tag: &str) -> Result<()> {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     {
         return Err(CleanboxError::InvalidUserInput(format!(
-            "Tag must be in kebab-case (lowercase, numbers, hyphens only): {}",
-            tag
+            "Tag must be in kebab-case (lowercase, numbers, hyphens only): {tag}"
         )));
     }
 
     // Must not start or end with hyphen
     if tag.starts_with('-') || tag.ends_with('-') {
         return Err(CleanboxError::InvalidUserInput(format!(
-            "Tag cannot start or end with hyphen: {}",
-            tag
+            "Tag cannot start or end with hyphen: {tag}"
         )));
     }
 
     // Must not have consecutive hyphens
     if tag.contains("--") {
         return Err(CleanboxError::InvalidUserInput(format!(
-            "Tag cannot contain consecutive hyphens: {}",
-            tag
+            "Tag cannot contain consecutive hyphens: {tag}"
         )));
     }
 
     // Basic English alphabet check (no unicode characters)
-    if !tag.chars().all(|c| c.is_ascii()) {
+    if !tag.is_ascii() {
         return Err(CleanboxError::InvalidUserInput(format!(
-            "Tag must contain only ASCII characters (English): {}",
-            tag
+            "Tag must contain only ASCII characters (English): {tag}"
         )));
     }
 
@@ -202,7 +198,7 @@ impl TagResolutionFlow {
 
         // Find similar tags
         let similar = self.dictionary.find_similar(input_tag, 3);
-        
+
         if similar.is_empty() {
             TagResolution::NoMatch {
                 input: input_tag.to_string(),
@@ -253,10 +249,11 @@ mod tests {
     fn create_test_tags_file(name: &str) -> PathBuf {
         let temp_dir = std::env::temp_dir();
         let test_file = temp_dir.join(format!("{}_{}.txt", name, std::process::id()));
-        
-        let content = "finance\nquarterly\nreports\nmachine-learning\ndata-science\nproject-management\n";
+
+        let content =
+            "finance\nquarterly\nreports\nmachine-learning\ndata-science\nproject-management\n";
         fs::write(&test_file, content).unwrap();
-        
+
         test_file
     }
 
@@ -271,13 +268,13 @@ mod tests {
     fn test_load_from_file() {
         let test_file = create_test_tags_file("load_test");
         let dict = TagDictionary::load_from_file(&test_file).unwrap();
-        
+
         assert!(!dict.is_empty());
         assert_eq!(dict.len(), 6);
         assert!(dict.contains("finance"));
         assert!(dict.contains("machine-learning"));
         assert!(!dict.contains("nonexistent"));
-        
+
         let _ = fs::remove_file(test_file); // Don't panic if cleanup fails
     }
 
@@ -285,31 +282,31 @@ mod tests {
     fn test_save_to_file() {
         let temp_dir = std::env::temp_dir();
         let test_file = temp_dir.join("test_save_tags.txt");
-        
+
         let mut dict = TagDictionary::new();
         dict.add_tag("finance".to_string()).unwrap();
         dict.add_tag("reports".to_string()).unwrap();
         dict.add_tag("data-science".to_string()).unwrap();
-        
+
         dict.save_to_file(&test_file).unwrap();
-        
+
         // Load it back and verify
         let loaded_dict = TagDictionary::load_from_file(&test_file).unwrap();
         assert_eq!(loaded_dict.len(), 3);
         assert!(loaded_dict.contains("finance"));
         assert!(loaded_dict.contains("reports"));
         assert!(loaded_dict.contains("data-science"));
-        
+
         fs::remove_file(test_file).unwrap();
     }
 
     #[test]
     fn test_add_tag() {
         let mut dict = TagDictionary::new();
-        
+
         assert!(dict.add_tag("valid-tag".to_string()).is_ok());
         assert!(dict.contains("valid-tag"));
-        
+
         // Test invalid tag
         assert!(dict.add_tag("Invalid-Tag".to_string()).is_err());
         assert!(!dict.contains("Invalid-Tag"));
@@ -321,7 +318,7 @@ mod tests {
         dict.add_tag("zebra".to_string()).unwrap();
         dict.add_tag("apple".to_string()).unwrap();
         dict.add_tag("banana".to_string()).unwrap();
-        
+
         let tags = dict.all_tags();
         assert_eq!(tags, vec!["apple", "banana", "zebra"]); // Should be sorted
     }
@@ -330,24 +327,30 @@ mod tests {
     fn test_find_similar() {
         let test_file = create_test_tags_file("similar_test");
         let dict = TagDictionary::load_from_file(&test_file).unwrap();
-        
+
         let similar = dict.find_similar("finanse", 3); // Typo of "finance"
         if !similar.is_empty() {
             // Should find finance as most similar if it exists
             let finance_found = similar.iter().any(|s| s.tag == "finance");
-            assert!(finance_found, "Should find 'finance' as similar to 'finanse'");
+            assert!(
+                finance_found,
+                "Should find 'finance' as similar to 'finanse'"
+            );
         }
-        
+
         let similar = dict.find_similar("machine", 3);
         if !similar.is_empty() {
             // Should find "machine-learning" if similarity is high enough
             let machine_learning_found = similar.iter().any(|s| s.tag == "machine-learning");
             if !machine_learning_found {
                 // At least should find some similar tags
-                assert!(!similar.is_empty(), "Should find some similar tags for 'machine'");
+                assert!(
+                    !similar.is_empty(),
+                    "Should find some similar tags for 'machine'"
+                );
             }
         }
-        
+
         let _ = fs::remove_file(test_file);
     }
 
@@ -376,17 +379,17 @@ mod tests {
     fn test_tag_validator_trait() {
         let test_file = create_test_tags_file("validator_test");
         let dict = TagDictionary::load_from_file(&test_file).unwrap();
-        
+
         let valid_tags = vec!["finance".to_string(), "reports".to_string()];
         assert!(dict.validate_tags(&valid_tags).is_ok());
-        
+
         let invalid_tags = vec!["Valid".to_string(), "invalid tag".to_string()];
         assert!(dict.validate_tags(&invalid_tags).is_err());
-        
+
         let suggestions = dict.suggest_similar("finanse");
         // Just check that we can get suggestions, don't assume exact matches
         assert!(suggestions.len() <= 5); // Should not exceed max_results
-        
+
         let _ = fs::remove_file(test_file);
     }
 
@@ -395,7 +398,7 @@ mod tests {
         let test_file = create_test_tags_file("resolution_test");
         let dict = TagDictionary::load_from_file(&test_file).unwrap();
         let flow = TagResolutionFlow::new(dict);
-        
+
         // Test exact match
         match flow.resolve_tag("finance") {
             TagResolution::ExactMatch(tag) => assert_eq!(tag, "finance"),
@@ -405,7 +408,7 @@ mod tests {
             }
             other => panic!("Unexpected resolution for exact match: {:?}", other),
         }
-        
+
         // Test similar found or no match depending on similarity threshold
         match flow.resolve_tag("finanse") {
             TagResolution::SimilarFound { input, similar, .. } => {
@@ -418,33 +421,37 @@ mod tests {
             }
             TagResolution::ExactMatch(_) => panic!("Should not be exact match for typo"),
         }
-        
+
         // Test no match but can create
         match flow.resolve_tag("new-valid-tag") {
             TagResolution::NoMatch { input, can_create } => {
                 assert_eq!(input, "new-valid-tag");
                 assert!(can_create);
             }
-            TagResolution::SimilarFound { input, can_create, .. } => {
+            TagResolution::SimilarFound {
+                input, can_create, ..
+            } => {
                 assert_eq!(input, "new-valid-tag");
                 assert!(can_create);
             }
             TagResolution::ExactMatch(_) => panic!("Should not be exact match for new tag"),
         }
-        
+
         // Test no match and cannot create
         match flow.resolve_tag("Invalid-Tag") {
             TagResolution::NoMatch { input, can_create } => {
                 assert_eq!(input, "Invalid-Tag");
                 assert!(!can_create);
             }
-            TagResolution::SimilarFound { input, can_create, .. } => {
+            TagResolution::SimilarFound {
+                input, can_create, ..
+            } => {
                 assert_eq!(input, "Invalid-Tag");
                 assert!(!can_create);
             }
             TagResolution::ExactMatch(_) => panic!("Should not be exact match for invalid tag"),
         }
-        
+
         let _ = fs::remove_file(test_file);
     }
 
@@ -452,10 +459,13 @@ mod tests {
     fn test_corrupted_tags_file() {
         let temp_dir = std::env::temp_dir();
         let test_file = temp_dir.join("nonexistent_tags.txt");
-        
+
         let result = TagDictionary::load_from_file(&test_file);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CleanboxError::TagDictionaryCorrupted(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            CleanboxError::TagDictionaryCorrupted(_)
+        ));
     }
 
     #[test]
@@ -465,7 +475,7 @@ mod tests {
             distance: 2,
             similarity: 0.8,
         };
-        
+
         assert_eq!(similar.tag, "finance");
         assert_eq!(similar.distance, 2);
         assert!((similar.similarity - 0.8).abs() < 0.01);

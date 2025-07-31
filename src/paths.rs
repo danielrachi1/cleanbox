@@ -30,7 +30,9 @@ impl BasePathResolver for LifeDirectoryResolver {
             Some("media") => config.media_root.clone(),
             Some("documents") => {
                 // For ProcessingConfig compatibility, derive from media_root parent
-                config.media_root.parent()
+                config
+                    .media_root
+                    .parent()
                     .unwrap_or(&config.media_root)
                     .join("documents")
             }
@@ -57,10 +59,7 @@ mod tests {
 
     #[test]
     fn test_life_directory_resolver_media_files() {
-        let config = ProcessingConfig::new(
-            PathBuf::from("/inbox"),
-            PathBuf::from("/life/media"),
-        );
+        let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/life/media"));
         let resolver = LifeDirectoryResolver::new();
 
         assert_eq!(
@@ -75,10 +74,7 @@ mod tests {
 
     #[test]
     fn test_life_directory_resolver_document_files() {
-        let config = ProcessingConfig::new(
-            PathBuf::from("/inbox"),
-            PathBuf::from("/life/media"),
-        );
+        let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/life/media"));
         let resolver = LifeDirectoryResolver::new();
 
         assert_eq!(
@@ -89,10 +85,7 @@ mod tests {
 
     #[test]
     fn test_life_directory_resolver_unknown_files() {
-        let config = ProcessingConfig::new(
-            PathBuf::from("/inbox"),
-            PathBuf::from("/life/media"),
-        );
+        let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/life/media"));
         let resolver = LifeDirectoryResolver::new();
 
         // Unknown files fallback to media_root
@@ -105,10 +98,7 @@ mod tests {
     #[test]
     fn test_life_directory_resolver_default() {
         let resolver = LifeDirectoryResolver::default();
-        let config = ProcessingConfig::new(
-            PathBuf::from("/inbox"),
-            PathBuf::from("/test/media"),
-        );
+        let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/test/media"));
 
         assert_eq!(
             BasePathResolver::resolve_base_path(&resolver, &FileType::Image, &config),
