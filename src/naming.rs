@@ -1,8 +1,8 @@
 use crate::error::{CleanboxError, Result};
-use crate::media::MediaFile;
+use crate::media::File;
 
 pub trait NamingStrategy {
-    fn generate_name(&self, media_file: &MediaFile) -> Result<String>;
+    fn generate_name(&self, file: &File) -> Result<String>;
 }
 
 pub struct TimestampNamingStrategy;
@@ -20,10 +20,10 @@ impl Default for TimestampNamingStrategy {
 }
 
 impl NamingStrategy for TimestampNamingStrategy {
-    fn generate_name(&self, media_file: &MediaFile) -> Result<String> {
-        let extension = media_file.extension()?;
+    fn generate_name(&self, file: &File) -> Result<String> {
+        let extension = file.extension()?;
 
-        let datetime = media_file
+        let datetime = file
             .metadata
             .as_ref()
             .and_then(|m| m.datetime_original.as_ref())
@@ -42,10 +42,10 @@ impl CustomNamingStrategy {
         Self { pattern }
     }
 
-    fn replace_placeholders(&self, media_file: &MediaFile) -> Result<String> {
+    fn replace_placeholders(&self, file: &File) -> Result<String> {
         let mut result = self.pattern.clone();
 
-        if let Some(metadata) = &media_file.metadata {
+        if let Some(metadata) = &file.metadata {
             if let Some(datetime) = &metadata.datetime_original {
                 result = result.replace("{datetime}", datetime);
 
@@ -73,13 +73,13 @@ impl CustomNamingStrategy {
             }
         }
 
-        let original_name = media_file.file_name()?;
+        let original_name = file.file_name()?;
         result = result.replace("{original}", original_name);
 
-        let stem = media_file.file_stem()?;
+        let stem = file.file_stem()?;
         result = result.replace("{stem}", stem);
 
-        let extension = media_file.extension()?;
+        let extension = file.extension()?;
         result = result.replace("{ext}", extension);
 
         Ok(result)
@@ -87,30 +87,30 @@ impl CustomNamingStrategy {
 }
 
 impl NamingStrategy for CustomNamingStrategy {
-    fn generate_name(&self, media_file: &MediaFile) -> Result<String> {
-        self.replace_placeholders(media_file)
+    fn generate_name(&self, file: &File) -> Result<String> {
+        self.replace_placeholders(file)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::{MediaFile, MediaMetadata};
+    use crate::media::{File, FileMetadata};
     use std::path::PathBuf;
 
-    fn create_test_media_file_with_datetime(datetime: &str) -> MediaFile {
+    fn create_test_file_with_datetime(datetime: &str) -> File {
         let path = PathBuf::from("/test/image.jpg");
         let metadata =
-            MediaMetadata::new("image/jpeg".to_string()).with_datetime(datetime.to_string());
-        MediaFile::new(&path).with_metadata(metadata)
+            FileMetadata::new("image/jpeg".to_string()).with_datetime(datetime.to_string());
+        File::new(&path).with_metadata(metadata)
     }
 
     #[test]
     fn test_timestamp_naming_strategy() {
         let strategy = TimestampNamingStrategy::new();
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00");
 
-        let result = strategy.generate_name(&media_file).unwrap();
+        let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "2023-12-01_14-30-00.jpg");
     }
 
@@ -118,10 +118,10 @@ mod tests {
     fn test_timestamp_naming_strategy_no_datetime() {
         let strategy = TimestampNamingStrategy::new();
         let path = PathBuf::from("/test/image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string());
-        let media_file = MediaFile::new(&path).with_metadata(metadata);
+        let metadata = FileMetadata::new("image/jpeg".to_string());
+        let file = File::new(&path).with_metadata(metadata);
 
-        let result = strategy.generate_name(&media_file);
+        let result = strategy.generate_name(&file);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -132,9 +132,9 @@ mod tests {
     #[test]
     fn test_custom_naming_strategy_datetime_replacement() {
         let strategy = CustomNamingStrategy::new("{datetime}.{ext}".to_string());
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00");
 
-        let result = strategy.generate_name(&media_file).unwrap();
+        let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "2023-12-01_14-30-00.jpg");
     }
 
@@ -143,9 +143,9 @@ mod tests {
         let strategy = CustomNamingStrategy::new(
             "{year}-{month}-{day}_{hour}{minute}{second}.{ext}".to_string(),
         );
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00");
 
-        let result = strategy.generate_name(&media_file).unwrap();
+        let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "2023-12-01_143000.jpg");
     }
 
@@ -153,12 +153,12 @@ mod tests {
     fn test_custom_naming_strategy_with_hash() {
         let strategy = CustomNamingStrategy::new("{datetime}_{hash6}.{ext}".to_string());
         let path = PathBuf::from("/test/image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string())
+        let metadata = FileMetadata::new("image/jpeg".to_string())
             .with_datetime("2023-12-01_14-30-00".to_string())
             .with_hash("abcdef123456".to_string());
-        let media_file = MediaFile::new(&path).with_metadata(metadata);
+        let file = File::new(&path).with_metadata(metadata);
 
-        let result = strategy.generate_name(&media_file).unwrap();
+        let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "2023-12-01_14-30-00_abcdef.jpg");
     }
 
@@ -166,10 +166,10 @@ mod tests {
     fn test_custom_naming_strategy_original_and_stem() {
         let strategy = CustomNamingStrategy::new("{stem}_processed.{ext}".to_string());
         let path = PathBuf::from("/test/my_image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string());
-        let media_file = MediaFile::new(&path).with_metadata(metadata);
+        let metadata = FileMetadata::new("image/jpeg".to_string());
+        let file = File::new(&path).with_metadata(metadata);
 
-        let result = strategy.generate_name(&media_file).unwrap();
+        let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "my_image_processed.jpg");
     }
 
@@ -177,10 +177,10 @@ mod tests {
     fn test_custom_naming_strategy_short_hash() {
         let strategy = CustomNamingStrategy::new("{hash6}.{ext}".to_string());
         let path = PathBuf::from("/test/image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string()).with_hash("abc".to_string()); // Hash shorter than 6 chars
-        let media_file = MediaFile::new(&path).with_metadata(metadata);
+        let metadata = FileMetadata::new("image/jpeg".to_string()).with_hash("abc".to_string()); // Hash shorter than 6 chars
+        let file = File::new(&path).with_metadata(metadata);
 
-        let result = strategy.generate_name(&media_file).unwrap();
+        let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "abc.jpg");
     }
 
@@ -188,10 +188,10 @@ mod tests {
     fn test_custom_naming_strategy_no_datetime_parts() {
         let strategy = CustomNamingStrategy::new("{year}.{ext}".to_string());
         let path = PathBuf::from("/test/image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string());
-        let media_file = MediaFile::new(&path).with_metadata(metadata);
+        let metadata = FileMetadata::new("image/jpeg".to_string());
+        let file = File::new(&path).with_metadata(metadata);
 
-        let result = strategy.generate_name(&media_file).unwrap();
+        let result = strategy.generate_name(&file).unwrap();
         assert_eq!(result, "{year}.jpg"); // Should leave placeholder as-is
     }
 }

@@ -1,10 +1,11 @@
 use crate::error::{CleanboxError, Result};
-use crate::media::MediaMetadata;
+use crate::media::{FileMetadata, FileType};
 use std::path::Path;
 
-pub trait ExifParser {
-    fn parse_metadata<P: AsRef<Path>>(&self, file_path: P) -> Result<MediaMetadata>;
+pub trait MetadataParser {
+    fn parse_metadata<P: AsRef<Path>>(&self, file_path: P) -> Result<FileMetadata>;
     fn extract_datetime<P: AsRef<Path>>(&self, file_path: P) -> Result<String>;
+    fn supports_file_type(&self, file_type: &FileType) -> bool;
 }
 
 pub struct RexifParser;
@@ -34,8 +35,8 @@ impl Default for RexifParser {
     }
 }
 
-impl ExifParser for RexifParser {
-    fn parse_metadata<P: AsRef<Path>>(&self, file_path: P) -> Result<MediaMetadata> {
+impl MetadataParser for RexifParser {
+    fn parse_metadata<P: AsRef<Path>>(&self, file_path: P) -> Result<FileMetadata> {
         let path_str = file_path
             .as_ref()
             .to_str()
@@ -43,7 +44,7 @@ impl ExifParser for RexifParser {
 
         let exif = rexif::parse_file(path_str)?;
 
-        let mut metadata = MediaMetadata::new(exif.mime.to_string());
+        let mut metadata = FileMetadata::new(exif.mime.to_string());
 
         if let Ok(datetime) = self.extract_datetime(&file_path) {
             metadata = metadata.with_datetime(datetime);
@@ -69,5 +70,9 @@ impl ExifParser for RexifParser {
         Err(CleanboxError::Exif(
             "DateTimeOriginal tag not found".to_string(),
         ))
+    }
+
+    fn supports_file_type(&self, file_type: &FileType) -> bool {
+        matches!(file_type, FileType::Image | FileType::Video)
     }
 }

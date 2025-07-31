@@ -1,15 +1,15 @@
 use crate::config::{DuplicateHandling, ProcessingConfig};
 use crate::error::{CleanboxError, Result};
-use crate::exif::ExifParser;
+use crate::metadata::MetadataParser;
 use crate::filesystem::{FileHasher, FileManager};
-use crate::media::MediaFile;
+use crate::media::File;
 use crate::naming::NamingStrategy;
 use crate::organization::OrganizationStrategy;
 use std::path::Path;
 
-pub struct MediaProcessor<E, F, N, O>
+pub struct FileProcessor<E, F, N, O>
 where
-    E: ExifParser,
+    E: MetadataParser,
     F: FileManager,
     N: NamingStrategy,
     O: OrganizationStrategy,
@@ -53,9 +53,9 @@ impl ProcessingResult {
     }
 }
 
-impl<E, F, N, O> MediaProcessor<E, F, N, O>
+impl<E, F, N, O> FileProcessor<E, F, N, O>
 where
-    E: ExifParser,
+    E: MetadataParser,
     F: FileManager,
     N: NamingStrategy,
     O: OrganizationStrategy,
@@ -110,19 +110,19 @@ where
     }
 
     fn process_single_file(&self, file_path: &Path) -> Result<()> {
-        let mut media_file = MediaFile::new(file_path);
+        let mut file = File::new(file_path);
 
         let metadata = self.exif_parser.parse_metadata(file_path)?;
 
-        if !metadata.media_type.is_supported() {
-            return Err(CleanboxError::UnsupportedMediaType(
+        if !metadata.file_type.is_supported() {
+            return Err(CleanboxError::UnsupportedFileType(
                 metadata.mime_type.clone(),
             ));
         }
 
-        media_file = media_file.with_metadata(metadata);
+        file = file.with_metadata(metadata);
 
-        let new_name = self.naming_strategy.generate_name(&media_file)?;
+        let new_name = self.naming_strategy.generate_name(&file)?;
         let temp_path = file_path.with_file_name(&new_name);
 
         if file_path != temp_path {
@@ -131,7 +131,7 @@ where
 
         let target_dir = self
             .organization_strategy
-            .determine_target_directory(&media_file, &self.config.media_root)?;
+            .determine_target_directory(&file, &self.config.media_root)?;
 
         let mut target_path = target_dir.join(&new_name);
 
@@ -176,7 +176,7 @@ where
     fn should_skip_error(&self, error: &CleanboxError) -> bool {
         matches!(
             error,
-            CleanboxError::UnsupportedMediaType(_) | CleanboxError::Exif(_)
+            CleanboxError::UnsupportedFileType(_) | CleanboxError::Exif(_)
         )
     }
 }
@@ -186,13 +186,13 @@ mod tests {
     use super::*;
     use crate::config::DuplicateHandling;
     use crate::filesystem::MockFileManager;
-    use crate::media::{MediaFile, MediaMetadata};
+    use crate::media::{File, FileMetadata};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
     // Mock ExifParser for testing
     pub struct MockExifParser {
-        pub results: HashMap<PathBuf, Result<MediaMetadata>>,
+        pub results: HashMap<PathBuf, Result<FileMetadata>>,
     }
 
     impl MockExifParser {
@@ -203,13 +203,13 @@ mod tests {
         }
 
         #[allow(dead_code)]
-        pub fn add_result(&mut self, path: PathBuf, result: Result<MediaMetadata>) {
+        pub fn add_result(&mut self, path: PathBuf, result: Result<FileMetadata>) {
             self.results.insert(path, result);
         }
     }
 
-    impl crate::exif::ExifParser for MockExifParser {
-        fn parse_metadata<P: AsRef<Path>>(&self, file_path: P) -> Result<MediaMetadata> {
+    impl crate::metadata::MetadataParser for MockExifParser {
+        fn parse_metadata<P: AsRef<Path>>(&self, file_path: P) -> Result<FileMetadata> {
             let path_buf = file_path.as_ref().to_path_buf();
             if let Some(result) = self.results.get(&path_buf) {
                 match result {
@@ -223,6 +223,10 @@ mod tests {
 
         fn extract_datetime<P: AsRef<Path>>(&self, _file_path: P) -> Result<String> {
             Ok("2023-12-01_14-30-00".to_string())
+        }
+
+        fn supports_file_type(&self, file_type: &crate::media::FileType) -> bool {
+            matches!(file_type, crate::media::FileType::Image | crate::media::FileType::Video)
         }
     }
 
@@ -238,7 +242,7 @@ mod tests {
     }
 
     impl crate::naming::NamingStrategy for MockNamingStrategy {
-        fn generate_name(&self, _media_file: &MediaFile) -> Result<String> {
+        fn generate_name(&self, _file: &File) -> Result<String> {
             Ok(self.name.clone())
         }
     }
@@ -257,7 +261,7 @@ mod tests {
     impl crate::organization::OrganizationStrategy for MockOrganizationStrategy {
         fn determine_target_directory(
             &self,
-            _media_file: &MediaFile,
+            _file: &File,
             base_path: &Path,
         ) -> Result<PathBuf> {
             Ok(base_path.join(&self.directory))
@@ -265,11 +269,11 @@ mod tests {
     }
 
     fn create_test_processor()
-    -> MediaProcessor<MockExifParser, MockFileManager, MockNamingStrategy, MockOrganizationStrategy>
+    -> FileProcessor<MockExifParser, MockFileManager, MockNamingStrategy, MockOrganizationStrategy>
     {
         let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/media"));
 
-        MediaProcessor::new(
+        FileProcessor::new(
             MockExifParser::new(),
             MockFileManager::new(),
             MockNamingStrategy::new("test_file.jpg".to_string()),
@@ -314,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn test_media_processor_creation() {
+    fn test_file_processor_creation() {
         let processor = create_test_processor();
         assert_eq!(processor.config.inbox_path, PathBuf::from("/inbox"));
         assert_eq!(processor.config.media_root, PathBuf::from("/media"));
@@ -325,7 +329,7 @@ mod tests {
         let processor = create_test_processor();
 
         assert!(
-            processor.should_skip_error(&CleanboxError::UnsupportedMediaType(
+            processor.should_skip_error(&CleanboxError::UnsupportedFileType(
                 "text/plain".to_string()
             ))
         );
@@ -344,7 +348,7 @@ mod tests {
         let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/media"))
             .with_duplicate_handling(DuplicateHandling::Skip);
 
-        let processor = MediaProcessor::new(
+        let processor = FileProcessor::new(
             MockExifParser::new(),
             MockFileManager::new(),
             MockNamingStrategy::new("test.jpg".to_string()),
@@ -368,7 +372,7 @@ mod tests {
         let config = ProcessingConfig::new(PathBuf::from("/inbox"), PathBuf::from("/media"))
             .with_duplicate_handling(DuplicateHandling::Overwrite);
 
-        let processor = MediaProcessor::new(
+        let processor = FileProcessor::new(
             MockExifParser::new(),
             MockFileManager::new(),
             MockNamingStrategy::new("test.jpg".to_string()),
@@ -392,7 +396,7 @@ mod tests {
         let mut file_manager = MockFileManager::new();
         file_manager.add_file(PathBuf::from("/temp/file.jpg"), b"test content".to_vec());
 
-        let processor = MediaProcessor::new(
+        let processor = FileProcessor::new(
             MockExifParser::new(),
             file_manager,
             MockNamingStrategy::new("test.jpg".to_string()),

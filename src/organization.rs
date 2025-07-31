@@ -1,11 +1,11 @@
 use crate::error::{CleanboxError, Result};
-use crate::media::MediaFile;
+use crate::media::File;
 use std::path::{Path, PathBuf};
 
 pub trait OrganizationStrategy {
     fn determine_target_directory(
         &self,
-        media_file: &MediaFile,
+        file: &File,
         base_path: &Path,
     ) -> Result<PathBuf>;
 }
@@ -44,10 +44,10 @@ impl Default for MonthlyOrganizer {
 impl OrganizationStrategy for MonthlyOrganizer {
     fn determine_target_directory(
         &self,
-        media_file: &MediaFile,
+        file: &File,
         base_path: &Path,
     ) -> Result<PathBuf> {
-        let datetime = media_file
+        let datetime = file
             .metadata
             .as_ref()
             .and_then(|m| m.datetime_original.as_ref())
@@ -77,7 +77,7 @@ impl Default for FlatOrganizer {
 impl OrganizationStrategy for FlatOrganizer {
     fn determine_target_directory(
         &self,
-        _media_file: &MediaFile,
+        _file: &File,
         base_path: &Path,
     ) -> Result<PathBuf> {
         Ok(base_path.to_path_buf())
@@ -101,10 +101,10 @@ impl Default for YearlyOrganizer {
 impl OrganizationStrategy for YearlyOrganizer {
     fn determine_target_directory(
         &self,
-        media_file: &MediaFile,
+        file: &File,
         base_path: &Path,
     ) -> Result<PathBuf> {
-        let datetime = media_file
+        let datetime = file
             .metadata
             .as_ref()
             .and_then(|m| m.datetime_original.as_ref())
@@ -126,10 +126,10 @@ impl CustomOrganizer {
         Self { pattern }
     }
 
-    fn replace_placeholders(&self, media_file: &MediaFile, base_path: &Path) -> Result<PathBuf> {
+    fn replace_placeholders(&self, file: &File, base_path: &Path) -> Result<PathBuf> {
         let mut result = self.pattern.clone();
 
-        if let Some(metadata) = &media_file.metadata {
+        if let Some(metadata) = &file.metadata {
             if let Some(datetime) = &metadata.datetime_original {
                 result = result.replace("{datetime}", datetime);
 
@@ -146,7 +146,7 @@ impl CustomOrganizer {
 
             result = result.replace(
                 "{media_type}",
-                &format!("{:?}", metadata.media_type).to_lowercase(),
+                &format!("{:?}", metadata.file_type).to_lowercase(),
             );
         }
 
@@ -157,34 +157,34 @@ impl CustomOrganizer {
 impl OrganizationStrategy for CustomOrganizer {
     fn determine_target_directory(
         &self,
-        media_file: &MediaFile,
+        file: &File,
         base_path: &Path,
     ) -> Result<PathBuf> {
-        self.replace_placeholders(media_file, base_path)
+        self.replace_placeholders(file, base_path)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::{MediaFile, MediaMetadata};
+    use crate::media::{File, FileMetadata};
     use std::path::PathBuf;
 
-    fn create_test_media_file_with_datetime(datetime: &str, media_type: &str) -> MediaFile {
+    fn create_test_file_with_datetime(datetime: &str, file_type: &str) -> File {
         let path = PathBuf::from("/test/image.jpg");
         let metadata =
-            MediaMetadata::new(media_type.to_string()).with_datetime(datetime.to_string());
-        MediaFile::new(&path).with_metadata(metadata)
+            FileMetadata::new(file_type.to_string()).with_datetime(datetime.to_string());
+        File::new(&path).with_metadata(metadata)
     }
 
     #[test]
     fn test_monthly_organizer() {
         let organizer = MonthlyOrganizer::new();
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
         let base_path = Path::new("/media");
 
         let result = organizer
-            .determine_target_directory(&media_file, base_path)
+            .determine_target_directory(&file, base_path)
             .unwrap();
         assert_eq!(result, PathBuf::from("/media/2023/12"));
     }
@@ -192,11 +192,11 @@ mod tests {
     #[test]
     fn test_monthly_organizer_different_date() {
         let organizer = MonthlyOrganizer::new();
-        let media_file = create_test_media_file_with_datetime("2024-01-15_09-45-30", "video/mp4");
+        let file = create_test_file_with_datetime("2024-01-15_09-45-30", "video/mp4");
         let base_path = Path::new("/storage");
 
         let result = organizer
-            .determine_target_directory(&media_file, base_path)
+            .determine_target_directory(&file, base_path)
             .unwrap();
         assert_eq!(result, PathBuf::from("/storage/2024/01"));
     }
@@ -205,11 +205,11 @@ mod tests {
     fn test_monthly_organizer_no_datetime() {
         let organizer = MonthlyOrganizer::new();
         let path = PathBuf::from("/test/image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string());
-        let media_file = MediaFile::new(&path).with_metadata(metadata);
+        let metadata = FileMetadata::new("image/jpeg".to_string());
+        let file = File::new(&path).with_metadata(metadata);
         let base_path = Path::new("/media");
 
-        let result = organizer.determine_target_directory(&media_file, base_path);
+        let result = organizer.determine_target_directory(&file, base_path);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -222,9 +222,9 @@ mod tests {
         let organizer = MonthlyOrganizer::new();
 
         // Test with empty datetime (no parts at all)
-        let media_file = create_test_media_file_with_datetime("", "image/jpeg");
+        let file = create_test_file_with_datetime("", "image/jpeg");
         let base_path = Path::new("/media");
-        let result = organizer.determine_target_directory(&media_file, base_path);
+        let result = organizer.determine_target_directory(&file, base_path);
         assert!(result.is_err());
         match result.unwrap_err() {
             crate::error::CleanboxError::InvalidDateTime(_) => {} // Expected
@@ -232,8 +232,8 @@ mod tests {
         }
 
         // Test with only one part (missing month)
-        let media_file = create_test_media_file_with_datetime("2023_14-30-00", "image/jpeg");
-        let result = organizer.determine_target_directory(&media_file, base_path);
+        let file = create_test_file_with_datetime("2023_14-30-00", "image/jpeg");
+        let result = organizer.determine_target_directory(&file, base_path);
         assert!(result.is_err());
         match result.unwrap_err() {
             crate::error::CleanboxError::InvalidDateTime(_) => {} // Expected
@@ -244,11 +244,11 @@ mod tests {
     #[test]
     fn test_flat_organizer() {
         let organizer = FlatOrganizer::new();
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
         let base_path = Path::new("/media");
 
         let result = organizer
-            .determine_target_directory(&media_file, base_path)
+            .determine_target_directory(&file, base_path)
             .unwrap();
         assert_eq!(result, PathBuf::from("/media"));
     }
@@ -256,11 +256,11 @@ mod tests {
     #[test]
     fn test_yearly_organizer() {
         let organizer = YearlyOrganizer::new();
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
         let base_path = Path::new("/media");
 
         let result = organizer
-            .determine_target_directory(&media_file, base_path)
+            .determine_target_directory(&file, base_path)
             .unwrap();
         assert_eq!(result, PathBuf::from("/media/2023"));
     }
@@ -268,11 +268,11 @@ mod tests {
     #[test]
     fn test_custom_organizer_datetime_replacement() {
         let organizer = CustomOrganizer::new("{year}/{month}/{day}".to_string());
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
         let base_path = Path::new("/media");
 
         let result = organizer
-            .determine_target_directory(&media_file, base_path)
+            .determine_target_directory(&file, base_path)
             .unwrap();
         assert_eq!(result, PathBuf::from("/media/2023/12/01"));
     }
@@ -280,11 +280,11 @@ mod tests {
     #[test]
     fn test_custom_organizer_media_type() {
         let organizer = CustomOrganizer::new("{media_type}/{year}".to_string());
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00", "image/jpeg");
         let base_path = Path::new("/media");
 
         let result = organizer
-            .determine_target_directory(&media_file, base_path)
+            .determine_target_directory(&file, base_path)
             .unwrap();
         assert_eq!(result, PathBuf::from("/media/image/2023"));
     }
@@ -292,11 +292,11 @@ mod tests {
     #[test]
     fn test_custom_organizer_video_type() {
         let organizer = CustomOrganizer::new("{media_type}/{year}".to_string());
-        let media_file = create_test_media_file_with_datetime("2023-12-01_14-30-00", "video/mp4");
+        let file = create_test_file_with_datetime("2023-12-01_14-30-00", "video/mp4");
         let base_path = Path::new("/media");
 
         let result = organizer
-            .determine_target_directory(&media_file, base_path)
+            .determine_target_directory(&file, base_path)
             .unwrap();
         assert_eq!(result, PathBuf::from("/media/video/2023"));
     }

@@ -9,7 +9,10 @@ pub enum CleanboxError {
     InvalidFileExtension(String),
     InvalidFileStem(String),
     FileAlreadyExists(String),
-    UnsupportedMediaType(String),
+    UnsupportedFileType(String),
+    UserCancelled,
+    InvalidUserInput(String),
+    TagDictionaryCorrupted(String),
 }
 
 impl fmt::Display for CleanboxError {
@@ -24,8 +27,13 @@ impl fmt::Display for CleanboxError {
             }
             CleanboxError::InvalidFileStem(path) => write!(f, "Invalid file stem: {path}"),
             CleanboxError::FileAlreadyExists(path) => write!(f, "File already exists: {path}"),
-            CleanboxError::UnsupportedMediaType(mime) => {
-                write!(f, "Unsupported media type: {mime}")
+            CleanboxError::UnsupportedFileType(mime) => {
+                write!(f, "Unsupported file type: {mime}")
+            }
+            CleanboxError::UserCancelled => write!(f, "Operation cancelled by user"),
+            CleanboxError::InvalidUserInput(msg) => write!(f, "Invalid user input: {msg}"),
+            CleanboxError::TagDictionaryCorrupted(msg) => {
+                write!(f, "Tag dictionary corrupted: {msg}")
             }
         }
     }
@@ -89,8 +97,20 @@ mod tests {
             "File already exists: /path/file.txt"
         );
 
-        let media_err = CleanboxError::UnsupportedMediaType("text/plain".to_string());
-        assert_eq!(format!("{media_err}"), "Unsupported media type: text/plain");
+        let file_err = CleanboxError::UnsupportedFileType("text/plain".to_string());
+        assert_eq!(format!("{file_err}"), "Unsupported file type: text/plain");
+
+        let cancel_err = CleanboxError::UserCancelled;
+        assert_eq!(format!("{cancel_err}"), "Operation cancelled by user");
+
+        let input_err = CleanboxError::InvalidUserInput("bad date format".to_string());
+        assert_eq!(format!("{input_err}"), "Invalid user input: bad date format");
+
+        let tag_err = CleanboxError::TagDictionaryCorrupted("malformed tags.txt".to_string());
+        assert_eq!(
+            format!("{tag_err}"),
+            "Tag dictionary corrupted: malformed tags.txt"
+        );
     }
 
     #[test]

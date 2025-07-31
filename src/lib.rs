@@ -1,35 +1,37 @@
 pub mod config;
 pub mod error;
-pub mod exif;
+pub mod metadata;
 pub mod filesystem;
 pub mod media;
 pub mod naming;
 pub mod organization;
+pub mod paths;
 pub mod processor;
 
 pub use config::{DuplicateHandling, ProcessingConfig};
 pub use error::{CleanboxError, Result};
-pub use exif::{ExifParser, RexifParser};
+pub use metadata::{MetadataParser, RexifParser};
 pub use filesystem::{FileManager, StdFileManager};
-pub use media::{MediaFile, MediaMetadata, MediaType};
+pub use media::{File, FileMetadata, FileType};
 pub use naming::{CustomNamingStrategy, NamingStrategy, TimestampNamingStrategy};
 pub use organization::{
     CustomOrganizer, FlatOrganizer, MonthlyOrganizer, OrganizationStrategy, YearlyOrganizer,
 };
-pub use processor::{MediaProcessor, ProcessingResult};
+pub use paths::{BasePathResolver, LifeDirectoryResolver};
+pub use processor::{FileProcessor, ProcessingResult};
 
 use std::path::Path;
 
 pub fn create_default_processor(
     inbox_path: impl AsRef<Path>,
     media_root: impl AsRef<Path>,
-) -> MediaProcessor<RexifParser, StdFileManager, TimestampNamingStrategy, MonthlyOrganizer> {
+) -> FileProcessor<RexifParser, StdFileManager, TimestampNamingStrategy, MonthlyOrganizer> {
     let config = ProcessingConfig::new(
         inbox_path.as_ref().to_path_buf(),
         media_root.as_ref().to_path_buf(),
     );
 
-    MediaProcessor::new(
+    FileProcessor::new(
         RexifParser::new(),
         StdFileManager::new(),
         TimestampNamingStrategy::new(),
@@ -93,14 +95,14 @@ mod tests {
 
     #[test]
     fn test_media_types_integration() {
-        let media_file = MediaFile::new("/test/image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string())
+        let file = File::new("/test/image.jpg");
+        let metadata = FileMetadata::new("image/jpeg".to_string())
             .with_datetime("2023-12-01_14-30-00".to_string())
             .with_hash("abc123".to_string());
 
-        let media_file = media_file.with_metadata(metadata);
-        assert!(media_file.is_supported_media());
-        assert_eq!(media_file.extension().unwrap(), "jpg");
+        let file = file.with_metadata(metadata);
+        assert!(file.is_supported_media());
+        assert_eq!(file.extension().unwrap(), "jpg");
     }
 
     #[test]

@@ -1,0 +1,11 @@
+Life Directory Specification
+    1. The life/ directory can only contain three sub-directories: documents/, inbox/, and media/.
+    2. The inbox/ directory cannot contain sub-directories.
+    3. The inbox/ directory is for files that will be archived, but hasn't been properly named yet.
+    4. The documents/ and media/ directories must have sub-directories by year (YYYY), and each year directory must have sub-directories by month (MM).
+    5. The monthly directories cannot have sub-directories.
+    6. All files in the documents/ monthly directories must be named like this: YYYY-MM-DD_description-in-lowercase-and-kebab-case@@tag1,tag2.ext.
+    7. All tags must be singular, lowercase, kebab-case, and in english.
+    8. A tags.txt file must be maintained at life/documents/tags.txt. It will contain one valid tag per line to serve as the official dictionary.
+    9. All files in the media/ monthly directories must be named based on their EXIF "Date Taken" metadata, or video equivalent, depending on video format, like this: YYYY-MM-DD_HH-MM-SS.ext.
+    10. If filename collisions exist for any file in documents/ or media/ directories, an underscore and the first six characters of the file's SHA-1 hash must be appended before the file extension.

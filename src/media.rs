@@ -2,43 +2,69 @@ use crate::error::{CleanboxError, Result};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum MediaType {
+pub enum FileType {
     Image,
     Video,
+    Document,
     Unknown,
 }
 
-impl MediaType {
+impl FileType {
     pub fn from_mime(mime: &str) -> Self {
         let mime_lower = mime.to_lowercase();
         if mime_lower.starts_with("image/") {
-            MediaType::Image
+            FileType::Image
         } else if mime_lower.starts_with("video/") {
-            MediaType::Video
+            FileType::Video
+        } else if mime_lower.starts_with("application/pdf")
+            || mime_lower.starts_with("application/msword")
+            || mime_lower.starts_with("application/vnd.openxmlformats")
+            || mime_lower.starts_with("text/") {
+            FileType::Document
         } else {
-            MediaType::Unknown
+            FileType::Unknown
         }
     }
 
     pub fn is_supported(&self) -> bool {
-        matches!(self, MediaType::Image | MediaType::Video)
+        matches!(self, FileType::Image | FileType::Video | FileType::Document)
+    }
+
+    pub fn needs_interactive_processing(&self) -> bool {
+        matches!(self, FileType::Document)
+    }
+
+    pub fn is_auto_processable(&self) -> bool {
+        matches!(self, FileType::Image | FileType::Video)
+    }
+
+    pub fn should_skip(&self) -> bool {
+        matches!(self, FileType::Unknown)
+    }
+
+    pub fn base_directory_name(&self) -> Option<&'static str> {
+        match self {
+            FileType::Image | FileType::Video => Some("media"),
+            FileType::Document => Some("documents"),
+            FileType::Unknown => None,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct MediaMetadata {
+pub struct FileMetadata {
     pub datetime_original: Option<String>,
-    pub media_type: MediaType,
+    pub file_type: FileType,
     pub mime_type: String,
     pub file_hash: Option<String>,
 }
 
-impl MediaMetadata {
+impl FileMetadata {
     pub fn new(mime_type: String) -> Self {
-        let media_type = MediaType::from_mime(&mime_type);
+        let file_type = FileType::from_mime(&mime_type);
         Self {
             datetime_original: None,
-            media_type,
+            file_type,
             mime_type,
             file_hash: None,
         }
@@ -56,12 +82,12 @@ impl MediaMetadata {
 }
 
 #[derive(Debug, Clone)]
-pub struct MediaFile {
+pub struct File {
     pub path: PathBuf,
-    pub metadata: Option<MediaMetadata>,
+    pub metadata: Option<FileMetadata>,
 }
 
-impl MediaFile {
+impl File {
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
@@ -69,7 +95,7 @@ impl MediaFile {
         }
     }
 
-    pub fn with_metadata(mut self, metadata: MediaMetadata) -> Self {
+    pub fn with_metadata(mut self, metadata: FileMetadata) -> Self {
         self.metadata = Some(metadata);
         self
     }
@@ -102,7 +128,7 @@ impl MediaFile {
     pub fn is_supported_media(&self) -> bool {
         self.metadata
             .as_ref()
-            .map(|m| m.media_type.is_supported())
+            .map(|m| m.file_type.is_supported())
             .unwrap_or(false)
     }
 }
@@ -113,34 +139,72 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_media_type_from_mime() {
-        assert_eq!(MediaType::from_mime("image/jpeg"), MediaType::Image);
-        assert_eq!(MediaType::from_mime("IMAGE/PNG"), MediaType::Image);
-        assert_eq!(MediaType::from_mime("video/mp4"), MediaType::Video);
-        assert_eq!(MediaType::from_mime("VIDEO/MOV"), MediaType::Video);
-        assert_eq!(MediaType::from_mime("text/plain"), MediaType::Unknown);
-        assert_eq!(MediaType::from_mime(""), MediaType::Unknown);
+    fn test_file_type_from_mime() {
+        assert_eq!(FileType::from_mime("image/jpeg"), FileType::Image);
+        assert_eq!(FileType::from_mime("IMAGE/PNG"), FileType::Image);
+        assert_eq!(FileType::from_mime("video/mp4"), FileType::Video);
+        assert_eq!(FileType::from_mime("VIDEO/MOV"), FileType::Video);
+        assert_eq!(FileType::from_mime("application/pdf"), FileType::Document);
+        assert_eq!(FileType::from_mime("application/msword"), FileType::Document);
+        assert_eq!(FileType::from_mime("application/vnd.openxmlformats-wordprocessingml.document"), FileType::Document);
+        assert_eq!(FileType::from_mime("text/plain"), FileType::Document);
+        assert_eq!(FileType::from_mime("text/csv"), FileType::Document);
+        assert_eq!(FileType::from_mime("application/unknown"), FileType::Unknown);
+        assert_eq!(FileType::from_mime(""), FileType::Unknown);
     }
 
     #[test]
-    fn test_media_type_is_supported() {
-        assert!(MediaType::Image.is_supported());
-        assert!(MediaType::Video.is_supported());
-        assert!(!MediaType::Unknown.is_supported());
+    fn test_file_type_is_supported() {
+        assert!(FileType::Image.is_supported());
+        assert!(FileType::Video.is_supported());
+        assert!(FileType::Document.is_supported());
+        assert!(!FileType::Unknown.is_supported());
     }
 
     #[test]
-    fn test_media_metadata_creation() {
-        let metadata = MediaMetadata::new("image/jpeg".to_string());
-        assert_eq!(metadata.media_type, MediaType::Image);
+    fn test_file_type_needs_interactive_processing() {
+        assert!(!FileType::Image.needs_interactive_processing());
+        assert!(!FileType::Video.needs_interactive_processing());
+        assert!(FileType::Document.needs_interactive_processing());
+        assert!(!FileType::Unknown.needs_interactive_processing());
+    }
+
+    #[test]
+    fn test_file_type_is_auto_processable() {
+        assert!(FileType::Image.is_auto_processable());
+        assert!(FileType::Video.is_auto_processable());
+        assert!(!FileType::Document.is_auto_processable());
+        assert!(!FileType::Unknown.is_auto_processable());
+    }
+
+    #[test]
+    fn test_file_type_should_skip() {
+        assert!(!FileType::Image.should_skip());
+        assert!(!FileType::Video.should_skip());
+        assert!(!FileType::Document.should_skip());
+        assert!(FileType::Unknown.should_skip());
+    }
+
+    #[test]
+    fn test_file_type_base_directory_name() {
+        assert_eq!(FileType::Image.base_directory_name(), Some("media"));
+        assert_eq!(FileType::Video.base_directory_name(), Some("media"));
+        assert_eq!(FileType::Document.base_directory_name(), Some("documents"));
+        assert_eq!(FileType::Unknown.base_directory_name(), None);
+    }
+
+    #[test]
+    fn test_file_metadata_creation() {
+        let metadata = FileMetadata::new("image/jpeg".to_string());
+        assert_eq!(metadata.file_type, FileType::Image);
         assert_eq!(metadata.mime_type, "image/jpeg");
         assert!(metadata.datetime_original.is_none());
         assert!(metadata.file_hash.is_none());
     }
 
     #[test]
-    fn test_media_metadata_with_datetime() {
-        let metadata = MediaMetadata::new("image/jpeg".to_string())
+    fn test_file_metadata_with_datetime() {
+        let metadata = FileMetadata::new("image/jpeg".to_string())
             .with_datetime("2023-12-01_14-30-00".to_string());
         assert_eq!(
             metadata.datetime_original,
@@ -149,66 +213,70 @@ mod tests {
     }
 
     #[test]
-    fn test_media_metadata_with_hash() {
-        let metadata = MediaMetadata::new("image/jpeg".to_string()).with_hash("abc123".to_string());
+    fn test_file_metadata_with_hash() {
+        let metadata = FileMetadata::new("image/jpeg".to_string()).with_hash("abc123".to_string());
         assert_eq!(metadata.file_hash, Some("abc123".to_string()));
     }
 
     #[test]
-    fn test_media_file_creation() {
+    fn test_file_creation() {
         let path = PathBuf::from("/test/image.jpg");
-        let media_file = MediaFile::new(&path);
-        assert_eq!(media_file.path, path);
-        assert!(media_file.metadata.is_none());
+        let file = File::new(&path);
+        assert_eq!(file.path, path);
+        assert!(file.metadata.is_none());
     }
 
     #[test]
-    fn test_media_file_with_metadata() {
+    fn test_file_with_metadata() {
         let path = PathBuf::from("/test/image.jpg");
-        let metadata = MediaMetadata::new("image/jpeg".to_string());
-        let media_file = MediaFile::new(&path).with_metadata(metadata.clone());
-        assert!(media_file.metadata.is_some());
-        assert_eq!(media_file.metadata.unwrap().mime_type, "image/jpeg");
+        let metadata = FileMetadata::new("image/jpeg".to_string());
+        let file = File::new(&path).with_metadata(metadata.clone());
+        assert!(file.metadata.is_some());
+        assert_eq!(file.metadata.unwrap().mime_type, "image/jpeg");
     }
 
     #[test]
-    fn test_media_file_file_name() {
+    fn test_file_file_name() {
         let path = PathBuf::from("/test/image.jpg");
-        let media_file = MediaFile::new(&path);
-        assert_eq!(media_file.file_name().unwrap(), "image.jpg");
+        let file = File::new(&path);
+        assert_eq!(file.file_name().unwrap(), "image.jpg");
     }
 
     #[test]
-    fn test_media_file_file_stem() {
+    fn test_file_file_stem() {
         let path = PathBuf::from("/test/image.jpg");
-        let media_file = MediaFile::new(&path);
-        assert_eq!(media_file.file_stem().unwrap(), "image");
+        let file = File::new(&path);
+        assert_eq!(file.file_stem().unwrap(), "image");
     }
 
     #[test]
-    fn test_media_file_extension() {
+    fn test_file_extension() {
         let path = PathBuf::from("/test/image.jpg");
-        let media_file = MediaFile::new(&path);
-        assert_eq!(media_file.extension().unwrap(), "jpg");
+        let file = File::new(&path);
+        assert_eq!(file.extension().unwrap(), "jpg");
     }
 
     #[test]
-    fn test_media_file_is_supported_media() {
+    fn test_file_is_supported_media() {
         let path = PathBuf::from("/test/image.jpg");
-        let mut media_file = MediaFile::new(&path);
-        assert!(!media_file.is_supported_media());
+        let mut file = File::new(&path);
+        assert!(!file.is_supported_media());
 
-        let metadata = MediaMetadata::new("image/jpeg".to_string());
-        media_file = media_file.with_metadata(metadata);
-        assert!(media_file.is_supported_media());
+        let metadata = FileMetadata::new("image/jpeg".to_string());
+        file = file.with_metadata(metadata);
+        assert!(file.is_supported_media());
 
-        let unsupported_metadata = MediaMetadata::new("text/plain".to_string());
-        media_file = MediaFile::new(&path).with_metadata(unsupported_metadata);
-        assert!(!media_file.is_supported_media());
+        let document_metadata = FileMetadata::new("application/pdf".to_string());
+        file = File::new(&path).with_metadata(document_metadata);
+        assert!(file.is_supported_media());
+
+        let unsupported_metadata = FileMetadata::new("application/unknown".to_string());
+        file = File::new(&path).with_metadata(unsupported_metadata);
+        assert!(!file.is_supported_media());
     }
 
     #[test]
-    fn test_media_file_invalid_path() {
+    fn test_file_invalid_path() {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
@@ -216,10 +284,10 @@ mod tests {
         let invalid_bytes = b"\xFF\xFE";
         let invalid_os_str = OsStr::from_bytes(invalid_bytes);
         let invalid_path = PathBuf::from(invalid_os_str);
-        let media_file = MediaFile::new(&invalid_path);
+        let file = File::new(&invalid_path);
 
-        assert!(media_file.file_name().is_err());
-        assert!(media_file.file_stem().is_err());
-        assert!(media_file.extension().is_err());
+        assert!(file.file_name().is_err());
+        assert!(file.file_stem().is_err());
+        assert!(file.extension().is_err());
     }
 }
