@@ -114,6 +114,7 @@ dependencies = [
  "clap",
  "rexif",
  "sha1",
+ "strsim",
 ]
 
 [[package]]

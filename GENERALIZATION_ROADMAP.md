@@ -174,7 +174,7 @@ The architecture must support intelligent file categorization and routing within
 - [x] Update all config usage throughout codebase
 
 ### Step 0.8: Document Input Structure (No Metadata Needed)
-- [ ] Create `DocumentInput` struct in new `src/document.rs`:
+- [x] Create `DocumentInput` struct in new `src/document.rs`:
   ```rust
   pub struct DocumentInput {
       pub date: String,           // YYYY-MM-DD (user provided)
@@ -182,21 +182,21 @@ The architecture must support intelligent file categorization and routing within
       pub tags: Vec<String>,      // from tags.txt (user selected)
   }
   ```
-- [ ] Add validation methods for date format, description format, and tag validation
-- [ ] **No metadata extraction needed** - everything comes from user interaction
+- [x] Add validation methods for date format, description format, and tag validation
+- [x] **No metadata extraction needed** - everything comes from user interaction
 
 ### Step 0.9: Intelligent Tag System with Fuzzy Matching
-- [ ] Create `src/tags.rs` module with:
+- [x] Create `src/tags.rs` module with:
   - `TagValidator` trait for validating against `tags.txt`
   - `TagDictionary` struct for loading/managing tag list from `life/documents/tags.txt`
   - `FuzzyMatcher` for finding similar tags (edit distance, substring matching)
   - Tag validation functions (lowercase, kebab-case, singular, English)
   - Similar tag suggestion with ranking
-- [ ] Add tag dictionary path to `ProcessingConfig`
-- [ ] Add dependency on fuzzy string matching crate (e.g., `strsim` or `fuzzy-matcher`)
+- [x] Add tag dictionary path to `ProcessingConfig`
+- [x] Add dependency on fuzzy string matching crate (e.g., `strsim` or `fuzzy-matcher`)
 
 ### Step 0.10: Enhanced Interactive Processing Components
-- [ ] Create `src/interactive.rs` module with:
+- [x] Create `src/interactive.rs` module with:
   - `UserPrompt` trait for getting user input
   - `DatePrompt` for document dates (default to today)
   - `DescriptionPrompt` for document descriptions (validate kebab-case)
@@ -211,7 +211,7 @@ The architecture must support intelligent file categorization and routing within
     }
     ```
   - `ProgressIndicator` for "Processing document X of Y..."
-- [ ] Remove `--interactive` flag - make it automatic for document files
+- [x] Remove `--interactive` flag - make it automatic for document files
 
 ## Phase 1: Add Document Support to FileType
 

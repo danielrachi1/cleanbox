@@ -1,5 +1,7 @@
 pub mod config;
+pub mod document;
 pub mod error;
+pub mod interactive;
 pub mod metadata;
 pub mod filesystem;
 pub mod media;
@@ -7,9 +9,12 @@ pub mod naming;
 pub mod organization;
 pub mod paths;
 pub mod processor;
+pub mod tags;
 
 pub use config::{DuplicateHandling, LifeConfig, ProcessingConfig};
+pub use document::{DocumentInput, today_date_string};
 pub use error::{CleanboxError, Result};
+pub use interactive::{ConsolePrompt, DatePrompt, DescriptionPrompt, DocumentInputCollector, ProgressIndicator, SmartTagSelector, UserPrompt};
 pub use metadata::{MetadataParser, RexifParser};
 pub use filesystem::{FileManager, StdFileManager};
 pub use media::{File, FileMetadata, FileType};
@@ -19,6 +24,7 @@ pub use organization::{
 };
 pub use paths::{BasePathResolver, LifeDirectoryResolver, LifePathResolver};
 pub use processor::{FileProcessor, ProcessingResult};
+pub use tags::{SimilarTag, TagDictionary, TagResolution, TagResolutionFlow, TagValidator, validate_tag_format};
 
 use std::path::Path;
 
