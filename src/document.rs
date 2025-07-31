@@ -1,4 +1,7 @@
 use crate::error::{CleanboxError, Result};
+use crate::filesystem::FileManager;
+use regex::Regex;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentInput {
@@ -189,6 +192,84 @@ pub fn today_date_string() -> String {
     )
 }
 
+// Extract date from filename in YYYY-MM-DD format
+pub fn extract_date_from_filename<P: AsRef<Path>>(filename: P) -> Option<String> {
+    let filename_str = filename
+        .as_ref()
+        .file_name()?
+        .to_str()?;
+    
+    // Regex to match YYYYMMDD, YYYY-MM-DD, or YYYY_MM_DD patterns
+    let date_patterns = [
+        r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})",  // YYYYMMDD, YYYY-MM-DD, YYYY_MM_DD
+        r"(\d{4})(\d{2})(\d{2})",           // Pure YYYYMMDD
+    ];
+    
+    for pattern in &date_patterns {
+        if let Ok(re) = Regex::new(pattern) {
+            if let Some(captures) = re.captures(filename_str) {
+                if captures.len() >= 4 {
+                    let year = captures.get(1)?.as_str().parse::<u32>().ok()?;
+                    let month = captures.get(2)?.as_str().parse::<u32>().ok()?;
+                    let day = captures.get(3)?.as_str().parse::<u32>().ok()?;
+                    
+                    // Basic validation
+                    if (1900..=2100).contains(&year) 
+                        && (1..=12).contains(&month) 
+                        && (1..=31).contains(&day) {
+                        return Some(format!("{:04}-{:02}-{:02}", year, month, day));
+                    }
+                }
+            }
+        }
+    }
+    
+    None
+}
+
+// Convert system time to YYYY-MM-DD format
+pub fn format_system_time_to_date(system_time: std::time::SystemTime) -> Option<String> {
+    use std::time::UNIX_EPOCH;
+    
+    let duration = system_time.duration_since(UNIX_EPOCH).ok()?;
+    let days_since_epoch = duration.as_secs() / (24 * 60 * 60);
+    let days_since_1970 = days_since_epoch as i32;
+
+    // Simple date calculation (good enough for file timestamps)
+    let year = 1970 + (days_since_1970 / 365);
+    let day_of_year = days_since_1970 % 365;
+    let month = (day_of_year / 30) + 1;
+    let day_of_month = (day_of_year % 30) + 1;
+
+    Some(format!(
+        "{:04}-{:02}-{:02}",
+        year,
+        month.min(12),
+        day_of_month.min(31)
+    ))
+}
+
+// Smart date suggestion with fallback chain
+pub fn suggest_document_date<P: AsRef<Path>, F: FileManager>(
+    filename: P, 
+    file_manager: &F
+) -> String {
+    // Priority 1: Try to extract date from filename
+    if let Some(date_from_filename) = extract_date_from_filename(&filename) {
+        return date_from_filename;
+    }
+    
+    // Priority 2: Try to get filesystem modified time
+    if let Ok(modified_time) = file_manager.get_file_modified_time(&filename) {
+        if let Some(date_from_filesystem) = format_system_time_to_date(modified_time) {
+            return date_from_filesystem;
+        }
+    }
+    
+    // Priority 3: Fall back to current date
+    today_date_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,5 +449,206 @@ mod tests {
         // Should be parseable as a valid DocumentInput date
         let input = DocumentInput::new(today, "test".to_string(), vec!["tag".to_string()]);
         assert!(input.validate_date().is_ok());
+    }
+
+    #[test]
+    fn test_extract_date_from_filename_yyyymmdd() {
+        // Test pure YYYYMMDD format
+        assert_eq!(
+            extract_date_from_filename("20250731_quarterly_report.pdf"),
+            Some("2025-07-31".to_string())
+        );
+        
+        // Test YYYYMMDD at start
+        assert_eq!(
+            extract_date_from_filename("20251225_christmas_plan.docx"),
+            Some("2025-12-25".to_string())
+        );
+        
+        // Test YYYYMMDD in middle
+        assert_eq!(
+            extract_date_from_filename("report_20250101_final.pdf"),
+            Some("2025-01-01".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_date_from_filename_formatted() {
+        // Test YYYY-MM-DD format
+        assert_eq!(
+            extract_date_from_filename("2025-07-31_quarterly_report.pdf"),
+            Some("2025-07-31".to_string())
+        );
+        
+        // Test YYYY_MM_DD format
+        assert_eq!(
+            extract_date_from_filename("2025_12_25_christmas_plan.docx"),
+            Some("2025-12-25".to_string())
+        );
+        
+        // Test mixed separators
+        assert_eq!(
+            extract_date_from_filename("invoice-2025-01-15.pdf"),
+            Some("2025-01-15".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_date_from_filename_invalid() {
+        // Test invalid year
+        assert_eq!(
+            extract_date_from_filename("1899-01-01_old_document.pdf"),
+            None
+        );
+        
+        // Test invalid month
+        assert_eq!(
+            extract_date_from_filename("2025-13-01_invalid_month.pdf"),
+            None
+        );
+        
+        // Test invalid day
+        assert_eq!(
+            extract_date_from_filename("2025-01-32_invalid_day.pdf"),
+            None
+        );
+        
+        // Test no date pattern
+        assert_eq!(
+            extract_date_from_filename("some_document.pdf"),
+            None
+        );
+        
+        // Test malformed date
+        assert_eq!(
+            extract_date_from_filename("202507_incomplete_date.pdf"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_date_from_filename_edge_cases() {
+        // Test multiple dates (should match first valid one)
+        assert_eq!(
+            extract_date_from_filename("20250101_report_20251231.pdf"),
+            Some("2025-01-01".to_string())
+        );
+        
+        // Test date with extensions
+        assert_eq!(
+            extract_date_from_filename("20250731.backup.pdf"),
+            Some("2025-07-31".to_string())
+        );
+        
+        // Test only filename (no path)
+        use std::path::Path;
+        assert_eq!(
+            extract_date_from_filename(Path::new("/long/path/to/20250731_file.pdf")),
+            Some("2025-07-31".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_system_time_to_date() {
+        use std::time::{Duration, UNIX_EPOCH};
+        
+        // Test a known timestamp (approximately 2025-07-31)
+        let days_since_epoch = (2025 - 1970) * 365 + 212; // Roughly July 31
+        let test_time = UNIX_EPOCH + Duration::from_secs(days_since_epoch as u64 * 24 * 60 * 60);
+        
+        let result = format_system_time_to_date(test_time);
+        assert!(result.is_some());
+        
+        let date_str = result.unwrap();
+        assert_eq!(date_str.len(), 10); // YYYY-MM-DD format
+        assert!(date_str.starts_with("2025")); // Should be 2025
+        
+        // Test current time
+        let now = std::time::SystemTime::now();
+        let result = format_system_time_to_date(now);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_suggest_document_date_filename_priority() {
+        use crate::filesystem::MockFileManager;
+        use std::time::{Duration, UNIX_EPOCH};
+        
+        let mut file_manager = MockFileManager::new();
+        let old_time = UNIX_EPOCH + Duration::from_secs(1000000); // Some old timestamp
+        
+        // Add file with modified time that differs from filename date
+        file_manager.add_file_with_modified_time(
+            std::path::PathBuf::from("20250731_report.pdf"),
+            vec![1, 2, 3],
+            old_time,
+        );
+        
+        // Should prioritize filename date over filesystem date
+        let result = suggest_document_date("20250731_report.pdf", &file_manager);
+        assert_eq!(result, "2025-07-31");
+    }
+
+    #[test]
+    fn test_suggest_document_date_filesystem_fallback() {
+        use crate::filesystem::MockFileManager;
+        use std::time::{Duration, UNIX_EPOCH};
+        
+        let mut file_manager = MockFileManager::new();
+        let known_time = UNIX_EPOCH + Duration::from_secs((2025 - 1970) * 365 * 24 * 60 * 60); // Roughly 2025
+        
+        // Add file without date in filename but with known modified time
+        file_manager.add_file_with_modified_time(
+            std::path::PathBuf::from("report_without_date.pdf"),
+            vec![1, 2, 3],
+            known_time,
+        );
+        
+        // Should use filesystem modified time
+        let result = suggest_document_date("report_without_date.pdf", &file_manager);
+        assert!(result.starts_with("2025")); // Should be approximately 2025
+        assert_eq!(result.len(), 10); // YYYY-MM-DD format
+    }
+
+    #[test]
+    fn test_suggest_document_date_today_fallback() {
+        use crate::filesystem::MockFileManager;
+        
+        let file_manager = MockFileManager::new(); // Empty manager
+        
+        // File doesn't exist, should fall back to today
+        let result = suggest_document_date("nonexistent_file.pdf", &file_manager);
+        let today = today_date_string();
+        assert_eq!(result, today);
+    }
+
+    #[test]
+    fn test_suggest_document_date_comprehensive_fallback() {
+        use crate::filesystem::MockFileManager;
+        use std::time::{Duration, UNIX_EPOCH};
+        
+        let mut file_manager = MockFileManager::new();
+        
+        // Test 1: Filename date exists -> use it
+        file_manager.add_file(std::path::PathBuf::from("20250101_test.pdf"), vec![1, 2, 3]);
+        let result = suggest_document_date("20250101_test.pdf", &file_manager);
+        assert_eq!(result, "2025-01-01");
+        
+        // Test 2: No filename date, but filesystem time exists -> use filesystem
+        let fs_time = UNIX_EPOCH + Duration::from_secs(1600000000); // Known timestamp
+        file_manager.add_file_with_modified_time(
+            std::path::PathBuf::from("no_date_file.pdf"),
+            vec![4, 5, 6],
+            fs_time,
+        );
+        let result = suggest_document_date("no_date_file.pdf", &file_manager);
+        // Should be a valid date format from filesystem time
+        assert_eq!(result.len(), 10);
+        assert!(result.contains("-"));
+        
+        // Test 3: Neither filename nor filesystem -> use today
+        let result = suggest_document_date("completely_missing.pdf", &file_manager);
+        let today = today_date_string();
+        assert_eq!(result, today);
     }
 }

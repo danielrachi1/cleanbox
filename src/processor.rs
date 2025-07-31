@@ -273,7 +273,7 @@ impl UnifiedProcessingResult {
 pub struct UnifiedProcessor<E, F, P>
 where
     E: MetadataParser,
-    F: FileManager,
+    F: FileManager + Clone,
     P: UserPrompt + Clone,
 {
     metadata_parser: E,
@@ -285,7 +285,7 @@ where
 impl<E, F, P> UnifiedProcessor<E, F, P>
 where
     E: MetadataParser,
-    F: FileManager,
+    F: FileManager + Clone,
     P: UserPrompt + Clone,
 {
     pub fn new(metadata_parser: E, file_manager: F, prompter: P, life_config: LifeConfig) -> Self {
@@ -448,7 +448,7 @@ where
         let tag_dict = TagDictionary::load_from_file(self.life_config.tags_file())?;
 
         // Create document input collector
-        let mut document_collector = DocumentInputCollector::new(self.prompter.clone(), tag_dict);
+        let mut document_collector = DocumentInputCollector::new(self.prompter.clone(), tag_dict, self.file_manager.clone());
 
         for file_path in document_files.iter() {
             println!(
