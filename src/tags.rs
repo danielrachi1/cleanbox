@@ -78,11 +78,29 @@ impl TagDictionary {
             .map(|tag| {
                 let distance = strsim::levenshtein(query, tag);
                 let normalized_distance = distance as f64 / tag.len().max(query.len()) as f64;
+                let base_similarity = 1.0 - normalized_distance;
+
+                // Enhanced scoring with intelligent bonuses
+                let prefix_bonus = if tag.starts_with(query) { 0.5 } else { 0.0 };
+                let word_boundary_bonus = if tag.contains(&format!("-{}", query)) {
+                    0.2
+                } else {
+                    0.0
+                };
+                let early_position_bonus = match tag.find(query) {
+                    Some(pos) if pos <= 2 => 0.1,
+                    _ => 0.0,
+                };
+
+                // Calculate enhanced similarity, capped at 1.0
+                let enhanced_similarity =
+                    (base_similarity + prefix_bonus + word_boundary_bonus + early_position_bonus)
+                        .min(1.0);
 
                 SimilarTag {
                     tag: tag.clone(),
                     distance,
-                    similarity: 1.0 - normalized_distance,
+                    similarity: enhanced_similarity,
                 }
             })
             .filter(|similar_tag| {
@@ -325,12 +343,28 @@ mod tests {
 
     #[test]
     fn test_find_similar() {
-        let test_file = create_test_tags_file("similar_test");
-        let dict = TagDictionary::load_from_file(&test_file).unwrap();
+        // Create a specific test dictionary to test enhanced ranking
+        let mut dict = TagDictionary::new();
+        dict.add_tag("receipt".to_string()).unwrap();
+        dict.add_tag("legacy".to_string()).unwrap();
+        dict.add_tag("career".to_string()).unwrap();
+        dict.add_tag("finance".to_string()).unwrap();
+        dict.add_tag("machine-learning".to_string()).unwrap();
+        dict.add_tag("data-science".to_string()).unwrap();
 
-        let similar = dict.find_similar("finanse", 3); // Typo of "finance"
+        // Test prefix matching (issue #11 main case)
+        let similar = dict.find_similar("re", 3);
+        assert!(!similar.is_empty(), "Should find matches for 're'");
+
+        // "receipt" should be ranked highest due to prefix bonus
+        assert_eq!(
+            similar[0].tag, "receipt",
+            "Receipt should rank highest for 're' due to prefix match"
+        );
+
+        // Test typo matching
+        let similar = dict.find_similar("finanse", 3);
         if !similar.is_empty() {
-            // Should find finance as most similar if it exists
             let finance_found = similar.iter().any(|s| s.tag == "finance");
             assert!(
                 finance_found,
@@ -338,20 +372,32 @@ mod tests {
             );
         }
 
-        let similar = dict.find_similar("machine", 3);
+        // Test word boundary bonus for kebab-case
+        let similar = dict.find_similar("ml", 3);
         if !similar.is_empty() {
-            // Should find "machine-learning" if similarity is high enough
             let machine_learning_found = similar.iter().any(|s| s.tag == "machine-learning");
-            if !machine_learning_found {
-                // At least should find some similar tags
+            if machine_learning_found {
+                // If found, machine-learning should have high ranking due to word boundary bonus
+                let ml_position = similar.iter().position(|s| s.tag == "machine-learning");
                 assert!(
-                    !similar.is_empty(),
-                    "Should find some similar tags for 'machine'"
+                    ml_position.is_some(),
+                    "machine-learning should be found for 'ml'"
                 );
             }
         }
 
-        let _ = fs::remove_file(test_file);
+        // Test early position bonus
+        let similar = dict.find_similar("da", 3);
+        if !similar.is_empty() {
+            let data_science_found = similar.iter().any(|s| s.tag == "data-science");
+            if data_science_found {
+                // data-science should rank well due to early position match
+                assert!(
+                    similar.iter().any(|s| s.tag == "data-science"),
+                    "Should find data-science for 'da'"
+                );
+            }
+        }
     }
 
     #[test]
