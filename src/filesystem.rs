@@ -142,7 +142,12 @@ impl MockFileManager {
         self.files.insert(path, content);
     }
 
-    pub fn add_file_with_modified_time(&mut self, path: PathBuf, content: Vec<u8>, modified_time: std::time::SystemTime) {
+    pub fn add_file_with_modified_time(
+        &mut self,
+        path: PathBuf,
+        content: Vec<u8>,
+        modified_time: std::time::SystemTime,
+    ) {
         self.files.insert(path.clone(), content);
         self.file_modified_times.insert(path, modified_time);
     }
@@ -317,25 +322,25 @@ mod tests {
     #[test]
     fn test_mock_file_manager_get_file_modified_time() {
         use std::time::{Duration, UNIX_EPOCH};
-        
+
         let mut manager = MockFileManager::new();
         let test_time = UNIX_EPOCH + Duration::from_secs(1000000);
-        
+
         // Test file with specific modified time
         manager.add_file_with_modified_time(
-            PathBuf::from("/test/file1.txt"), 
-            vec![1, 2, 3], 
-            test_time
+            PathBuf::from("/test/file1.txt"),
+            vec![1, 2, 3],
+            test_time,
         );
-        
+
         let result = manager.get_file_modified_time("/test/file1.txt").unwrap();
         assert_eq!(result, test_time);
-        
+
         // Test file without specific modified time (should default to current time)
         manager.add_file(PathBuf::from("/test/file2.txt"), vec![4, 5, 6]);
         let result = manager.get_file_modified_time("/test/file2.txt");
         assert!(result.is_ok());
-        
+
         // Test nonexistent file
         let result = manager.get_file_modified_time("/test/nonexistent.txt");
         assert!(result.is_err());
@@ -344,21 +349,21 @@ mod tests {
     #[test]
     fn test_mock_file_manager_add_file_with_modified_time() {
         use std::time::{Duration, UNIX_EPOCH};
-        
+
         let mut manager = MockFileManager::new();
         let test_time = UNIX_EPOCH + Duration::from_secs(2000000);
         let content = b"test content".to_vec();
         let path = PathBuf::from("/test/file.txt");
-        
+
         manager.add_file_with_modified_time(path.clone(), content.clone(), test_time);
-        
+
         // Verify file exists
         assert!(manager.file_exists(&path));
-        
+
         // Verify content is correct
         let hash = manager.calculate_file_hash(&path).unwrap();
         assert!(!hash.is_empty());
-        
+
         // Verify modified time is correct
         let modified_time = manager.get_file_modified_time(&path).unwrap();
         assert_eq!(modified_time, test_time);

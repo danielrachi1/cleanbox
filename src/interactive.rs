@@ -116,7 +116,10 @@ pub struct DatePrompt<P: UserPrompt, F: FileManager> {
 
 impl<P: UserPrompt, F: FileManager> DatePrompt<P, F> {
     pub fn new(prompter: P, file_manager: F) -> Self {
-        Self { prompter, file_manager }
+        Self {
+            prompter,
+            file_manager,
+        }
     }
 
     pub fn prompt_date(&self) -> Result<String> {
@@ -140,7 +143,10 @@ impl<P: UserPrompt, F: FileManager> DatePrompt<P, F> {
         }
     }
 
-    pub fn prompt_date_with_smart_suggestion<PA: AsRef<Path>>(&self, filename: PA) -> Result<String> {
+    pub fn prompt_date_with_smart_suggestion<PA: AsRef<Path>>(
+        &self,
+        filename: PA,
+    ) -> Result<String> {
         let suggested_date = suggest_document_date(&filename, &self.file_manager);
 
         loop {
@@ -358,7 +364,9 @@ impl<P: UserPrompt + Clone, F: FileManager + Clone> DocumentInputCollector<P, F>
     pub fn collect_input(&mut self, filename: &str) -> Result<DocumentInput> {
         println!("\nProcessing document: {filename}");
 
-        let date = self.date_prompt.prompt_date_with_smart_suggestion(filename)?;
+        let date = self
+            .date_prompt
+            .prompt_date_with_smart_suggestion(filename)?;
         let description = self.description_prompt.prompt_description()?;
         let tags = self.tag_selector.prompt_tags()?;
 
@@ -533,7 +541,7 @@ mod tests {
     #[test]
     fn test_date_prompt_with_default() {
         use crate::filesystem::MockFileManager;
-        
+
         let mock = MockPrompt::new().with_strings(vec!["".to_string()]); // Empty input, should use default
         let file_manager = MockFileManager::new();
         let date_prompt = DatePrompt::new(mock, file_manager);
@@ -546,7 +554,7 @@ mod tests {
     #[test]
     fn test_date_prompt_with_custom_date() {
         use crate::filesystem::MockFileManager;
-        
+
         let mock = MockPrompt::new().with_strings(vec!["2025-06-15".to_string()]);
         let file_manager = MockFileManager::new();
         let date_prompt = DatePrompt::new(mock, file_manager);
@@ -594,7 +602,7 @@ mod tests {
     #[test]
     fn test_document_input_collector_components() {
         use crate::filesystem::MockFileManager;
-        
+
         let mut dict = TagDictionary::new();
         dict.add_tag("finance".to_string()).unwrap();
 
@@ -622,7 +630,7 @@ mod tests {
     #[test]
     fn test_document_input_collector_full() {
         use crate::filesystem::MockFileManager;
-        
+
         let mut dict = TagDictionary::new();
         dict.add_tag("finance".to_string()).unwrap();
 
@@ -634,8 +642,13 @@ mod tests {
             .with_confirmations(vec![false]);
         let file_manager = MockFileManager::new();
 
-        let mut collector =
-            DocumentInputCollector::new_separate(date_mock, desc_mock, tag_mock, dict, file_manager);
+        let mut collector = DocumentInputCollector::new_separate(
+            date_mock,
+            desc_mock,
+            tag_mock,
+            dict,
+            file_manager,
+        );
         let result = collector.collect_input("test.pdf").unwrap();
 
         assert_eq!(result.date, "2025-07-31");
