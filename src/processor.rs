@@ -448,7 +448,8 @@ where
         let tag_dict = TagDictionary::load_from_file(self.life_config.tags_file())?;
 
         // Create document input collector
-        let mut document_collector = DocumentInputCollector::new(self.prompter.clone(), tag_dict, self.file_manager.clone());
+        let mut document_collector =
+            DocumentInputCollector::new(self.prompter.clone(), tag_dict, self.file_manager.clone());
 
         for file_path in document_files.iter() {
             println!(

@@ -38,29 +38,28 @@ impl Default for RexifParser {
 impl MetadataParser for RexifParser {
     fn parse_metadata<P: AsRef<Path>>(&self, file_path: P) -> Result<FileMetadata> {
         // First, detect MIME type using infer
-        let mime_type = if let Some(kind) =
-            infer::get_from_path(&file_path).map_err(CleanboxError::Io)?
-        {
-            kind.mime_type().to_string()
-        } else {
-            // Fallback to basic detection based on extension
-            let path = file_path.as_ref();
-            match path.extension().and_then(|ext| ext.to_str()) {
-                Some("txt") => "text/plain".to_string(),
-                Some("pdf") => "application/pdf".to_string(),
-                Some("doc") => "application/msword".to_string(),
-                Some("docx") => {
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        .to_string()
+        let mime_type =
+            if let Some(kind) = infer::get_from_path(&file_path).map_err(CleanboxError::Io)? {
+                kind.mime_type().to_string()
+            } else {
+                // Fallback to basic detection based on extension
+                let path = file_path.as_ref();
+                match path.extension().and_then(|ext| ext.to_str()) {
+                    Some("txt") => "text/plain".to_string(),
+                    Some("pdf") => "application/pdf".to_string(),
+                    Some("doc") => "application/msword".to_string(),
+                    Some("docx") => {
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            .to_string()
+                    }
+                    Some("zip") => "application/zip".to_string(),
+                    Some("json") => "application/json".to_string(),
+                    Some("csv") => "text/csv".to_string(),
+                    Some("xml") => "application/xml".to_string(),
+                    Some(_) => "application/octet-stream".to_string(), // Default for unknown extensions
+                    None => "".to_string(), // No extension - will be classified as Unknown
                 }
-                Some("zip") => "application/zip".to_string(),
-                Some("json") => "application/json".to_string(),
-                Some("csv") => "text/csv".to_string(),
-                Some("xml") => "application/xml".to_string(),
-                Some(_) => "application/octet-stream".to_string(), // Default for unknown extensions
-                None => "".to_string(), // No extension - will be classified as Unknown
-            }
-        };
+            };
 
         // Create metadata with detected MIME type
         let mut metadata = FileMetadata::new(mime_type.clone());

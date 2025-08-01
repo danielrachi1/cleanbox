@@ -91,3 +91,6 @@ life/
   3. fetch and rebase over main 
   4. fix conflicts, if any 
   5. open a pull request
+
+## Code Quality and Best Practices
+- Never leave clippy, or any other warnings unsolved. Always use cargo fmt.
