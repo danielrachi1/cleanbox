@@ -76,39 +76,26 @@ impl TagDictionary {
             return vec![];
         }
 
-        // Simple prefix-based matching like bash completion
+        // Only prefix-based matching like bash completion
         let mut prefix_matches: Vec<SimilarTag> = vec![];
-        let mut substring_matches: Vec<SimilarTag> = vec![];
 
         for tag in &self.tags {
             if tag.starts_with(query) {
-                // Exact prefix match - highest priority
+                // Exact prefix match only
                 prefix_matches.push(SimilarTag {
                     tag: tag.clone(),
                     distance: 0, // Perfect match
                     similarity: 1.0,
                 });
-            } else if tag.contains(query) {
-                // Substring match - lower priority
-                substring_matches.push(SimilarTag {
-                    tag: tag.clone(),
-                    distance: tag.find(query).unwrap_or(0), // Position of match
-                    similarity: 0.5,
-                });
             }
         }
 
-        // Sort each group alphabetically for predictable ordering
+        // Sort alphabetically for predictable ordering
         prefix_matches.sort_by(|a, b| a.tag.cmp(&b.tag));
-        substring_matches.sort_by(|a, b| a.tag.cmp(&b.tag));
-
-        // Combine results: prefix matches first, then substring matches
-        let mut results = prefix_matches;
-        results.extend(substring_matches);
 
         // Limit to max_results
-        results.truncate(max_results);
-        results
+        prefix_matches.truncate(max_results);
+        prefix_matches
     }
 
     pub fn is_empty(&self) -> bool {
@@ -380,30 +367,24 @@ mod tests {
             );
         }
 
-        // Test that prefix matches rank higher than substring matches
-        let first_result = &similar[0];
-        assert_eq!(
-            first_result.similarity, 1.0,
-            "First result should be a prefix match"
-        );
-        assert!(
-            first_result.tag.starts_with("re"),
-            "First result should start with 're'"
-        );
-
-        // Test substring matching for tags containing the query
-        let similar = dict.find_similar("ance", 3);
-        if !similar.is_empty() {
-            let finance_found = similar.iter().any(|s| s.tag == "finance");
-            assert!(finance_found, "Should find 'finance' containing 'ance'");
-
-            // Substring matches should have similarity 0.5
-            let finance_result = similar.iter().find(|s| s.tag == "finance").unwrap();
+        // Test that all matches are prefix matches with similarity 1.0
+        for result in &similar {
             assert_eq!(
-                finance_result.similarity, 0.5,
-                "Substring matches should have similarity 0.5"
+                result.similarity, 1.0,
+                "All results should be prefix matches with similarity 1.0"
+            );
+            assert!(
+                result.tag.starts_with("re"),
+                "All results should start with 're'"
             );
         }
+
+        // Test that substring matches are NOT returned (only prefix matches)
+        let similar = dict.find_similar("ance", 3);
+        assert!(
+            similar.is_empty(),
+            "Should NOT find substring matches like 'finance' for 'ance'"
+        );
 
         // Test empty query returns no results
         let similar = dict.find_similar("", 5);
@@ -413,9 +394,12 @@ mod tests {
         let similar = dict.find_similar("xyz", 3);
         assert!(similar.is_empty(), "Should find no matches for 'xyz'");
 
-        // Test max_results limiting
-        let similar = dict.find_similar("a", 2); // Should find career, data-science, machine-learning
-        assert!(similar.len() <= 2, "Should respect max_results limit");
+        // Test max_results limiting - no tags start with "a" so should be empty
+        let similar = dict.find_similar("a", 2);
+        assert!(
+            similar.is_empty(),
+            "No tags start with 'a' so should be empty"
+        );
     }
 
     #[test]

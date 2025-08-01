@@ -893,7 +893,7 @@ mod tests {
         let history = MemHistory::new();
         let ctx = Context::new(&history);
 
-        // Test fuzzy matching for "fin" - should match finance, finance-report, financial
+        // Test prefix matching for "fin" - should match finance, finance-report, financial
         let (start, candidates) = completer.complete("fin", 3, &ctx).unwrap();
         assert_eq!(start, 0);
         assert!(!candidates.is_empty());
@@ -901,9 +901,9 @@ mod tests {
         let candidate_names: Vec<&str> = candidates.iter().map(|c| c.display.as_str()).collect();
         assert!(candidate_names.contains(&"finance"));
         assert!(candidate_names.contains(&"financial"));
-        // Note: "finance-report" may not match "fin" due to similarity threshold
+        assert!(candidate_names.contains(&"finance-report"));
 
-        // Test fuzzy matching in comma-separated context
+        // Test prefix matching in comma-separated context
         let (start, candidates) = completer.complete("personal, fin", 13, &ctx).unwrap();
         assert_eq!(start, 10);
         assert!(!candidates.is_empty());
