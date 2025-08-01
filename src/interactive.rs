@@ -372,13 +372,19 @@ impl<'a> Helper for FuzzyTagCompleter<'a> {}
 pub struct SmartTagSelector<P: UserPrompt> {
     prompter: P,
     flow: TagResolutionFlow,
+    tags_file_path: std::path::PathBuf,
 }
 
 impl<P: UserPrompt> SmartTagSelector<P> {
-    pub fn new(prompter: P, tag_dictionary: TagDictionary) -> Self {
+    pub fn new(
+        prompter: P,
+        tag_dictionary: TagDictionary,
+        tags_file_path: std::path::PathBuf,
+    ) -> Self {
         Self {
             prompter,
             flow: TagResolutionFlow::new(tag_dictionary),
+            tags_file_path,
         }
     }
 
@@ -479,6 +485,7 @@ impl<P: UserPrompt> SmartTagSelector<P> {
                 if can_create && selection == options.len() - 1 {
                     // User chose to create new tag
                     self.flow.dictionary_mut().add_tag(input.to_string())?;
+                    self.save_dictionary_immediately();
                     println!("Created new tag: {input}");
                     Ok(Some(input.to_string()))
                 } else {
@@ -493,6 +500,7 @@ impl<P: UserPrompt> SmartTagSelector<P> {
                         .prompt_confirmation(&format!("Create new tag '{input}'?"), true)?
                     {
                         self.flow.dictionary_mut().add_tag(input.to_string())?;
+                        self.save_dictionary_immediately();
                         println!("Created new tag: {input}");
                         Ok(Some(input.to_string()))
                     } else {
@@ -512,6 +520,13 @@ impl<P: UserPrompt> SmartTagSelector<P> {
     pub fn save_dictionary(&self, file_path: &std::path::Path) -> Result<()> {
         self.flow.dictionary().save_to_file(file_path)
     }
+
+    fn save_dictionary_immediately(&self) {
+        if let Err(e) = self.flow.dictionary().save_to_file(&self.tags_file_path) {
+            eprintln!("Warning: Failed to save tag dictionary immediately: {e}");
+            eprintln!("Tags will still be saved at the end of processing.");
+        }
+    }
 }
 
 pub struct DocumentInputCollector<P: UserPrompt, F: FileManager> {
@@ -521,22 +536,31 @@ pub struct DocumentInputCollector<P: UserPrompt, F: FileManager> {
 }
 
 impl<F: FileManager + Clone> DocumentInputCollector<ConsolePrompt, F> {
-    pub fn new_console(tag_dictionary: TagDictionary, file_manager: F) -> Self {
+    pub fn new_console(
+        tag_dictionary: TagDictionary,
+        file_manager: F,
+        tags_file_path: std::path::PathBuf,
+    ) -> Self {
         let prompter = ConsolePrompt::new();
         Self {
             date_prompt: DatePrompt::new(ConsolePrompt::new(), file_manager.clone()),
             description_prompt: DescriptionPrompt::new(ConsolePrompt::new()),
-            tag_selector: SmartTagSelector::new(prompter, tag_dictionary),
+            tag_selector: SmartTagSelector::new(prompter, tag_dictionary, tags_file_path),
         }
     }
 }
 
 impl<P: UserPrompt + Clone, F: FileManager + Clone> DocumentInputCollector<P, F> {
-    pub fn new(prompter: P, tag_dictionary: TagDictionary, file_manager: F) -> Self {
+    pub fn new(
+        prompter: P,
+        tag_dictionary: TagDictionary,
+        file_manager: F,
+        tags_file_path: std::path::PathBuf,
+    ) -> Self {
         Self {
             date_prompt: DatePrompt::new(prompter.clone(), file_manager),
             description_prompt: DescriptionPrompt::new(prompter.clone()),
-            tag_selector: SmartTagSelector::new(prompter, tag_dictionary),
+            tag_selector: SmartTagSelector::new(prompter, tag_dictionary, tags_file_path),
         }
     }
 
@@ -546,11 +570,12 @@ impl<P: UserPrompt + Clone, F: FileManager + Clone> DocumentInputCollector<P, F>
         tag_prompter: P,
         tag_dictionary: TagDictionary,
         file_manager: F,
+        tags_file_path: std::path::PathBuf,
     ) -> Self {
         Self {
             date_prompt: DatePrompt::new(date_prompter, file_manager),
             description_prompt: DescriptionPrompt::new(desc_prompter),
-            tag_selector: SmartTagSelector::new(tag_prompter, tag_dictionary),
+            tag_selector: SmartTagSelector::new(tag_prompter, tag_dictionary, tags_file_path),
         }
     }
 
