@@ -34,7 +34,7 @@ impl Default for ReadlinePrompt {
 impl UserPrompt for ReadlinePrompt {
     fn prompt_string(&self, message: &str, default: Option<&str>) -> Result<String> {
         let mut rl = DefaultEditor::new().map_err(|e| {
-            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {}", e))
+            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {e}"))
         })?;
 
         loop {
@@ -69,8 +69,7 @@ impl UserPrompt for ReadlinePrompt {
                 }
                 Err(e) => {
                     return Err(CleanboxError::InvalidUserInput(format!(
-                        "Readline error: {}",
-                        e
+                        "Readline error: {e}"
                     )));
                 }
             }
@@ -79,7 +78,7 @@ impl UserPrompt for ReadlinePrompt {
 
     fn prompt_confirmation(&self, message: &str, default: bool) -> Result<bool> {
         let mut rl = DefaultEditor::new().map_err(|e| {
-            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {}", e))
+            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {e}"))
         })?;
 
         loop {
@@ -111,8 +110,7 @@ impl UserPrompt for ReadlinePrompt {
                 }
                 Err(e) => {
                     return Err(CleanboxError::InvalidUserInput(format!(
-                        "Readline error: {}",
-                        e
+                        "Readline error: {e}"
                     )));
                 }
             }
@@ -121,7 +119,7 @@ impl UserPrompt for ReadlinePrompt {
 
     fn prompt_selection(&self, message: &str, options: &[&str]) -> Result<usize> {
         let mut rl = DefaultEditor::new().map_err(|e| {
-            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {}", e))
+            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {e}"))
         })?;
 
         loop {
@@ -158,8 +156,7 @@ impl UserPrompt for ReadlinePrompt {
                 }
                 Err(e) => {
                     return Err(CleanboxError::InvalidUserInput(format!(
-                        "Readline error: {}",
-                        e
+                        "Readline error: {e}"
                     )));
                 }
             }
@@ -396,7 +393,7 @@ impl<P: UserPrompt> SmartTagSelector<P> {
             // Create editor with fuzzy completer fresh each time to avoid borrowing issues
             let completer = FuzzyTagCompleter::new(self.flow.dictionary());
             let mut editor = Editor::new().map_err(|e| {
-                CleanboxError::InvalidUserInput(format!("Failed to initialize editor: {}", e))
+                CleanboxError::InvalidUserInput(format!("Failed to initialize editor: {e}"))
             })?;
             editor.set_helper(Some(completer));
 
@@ -414,8 +411,7 @@ impl<P: UserPrompt> SmartTagSelector<P> {
                 }
                 Err(e) => {
                     return Err(CleanboxError::InvalidUserInput(format!(
-                        "Readline error: {}",
-                        e
+                        "Readline error: {e}"
                     )));
                 }
             };
