@@ -2,6 +2,7 @@ use crate::document::{DocumentInput, suggest_document_date, today_date_string};
 use crate::error::{CleanboxError, Result};
 use crate::filesystem::FileManager;
 use crate::tags::{TagDictionary, TagResolution, TagResolutionFlow};
+use rustyline::DefaultEditor;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -12,11 +13,166 @@ pub trait UserPrompt {
 }
 
 #[derive(Clone)]
-pub struct ConsolePrompt;
+pub struct ReadlinePrompt;
+
+impl ReadlinePrompt {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ReadlinePrompt {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UserPrompt for ReadlinePrompt {
+    fn prompt_string(&self, message: &str, default: Option<&str>) -> Result<String> {
+        let mut rl = DefaultEditor::new().map_err(|e| {
+            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {}", e))
+        })?;
+
+        loop {
+            let prompt = if let Some(default_val) = default {
+                format!("{message} [{default_val}]: ")
+            } else {
+                format!("{message}: ")
+            };
+
+            match rl.readline(&prompt) {
+                Ok(input) => {
+                    let input = input.trim();
+                    if input.is_empty() {
+                        if let Some(default_val) = default {
+                            return Ok(default_val.to_string());
+                        } else {
+                            println!("Input cannot be empty. Please try again.");
+                            continue;
+                        }
+                    }
+                    return Ok(input.to_string());
+                }
+                Err(rustyline::error::ReadlineError::Interrupted) => {
+                    return Err(CleanboxError::InvalidUserInput(
+                        "User interrupted input".to_string(),
+                    ));
+                }
+                Err(rustyline::error::ReadlineError::Eof) => {
+                    return Err(CleanboxError::InvalidUserInput(
+                        "End of input reached".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(CleanboxError::InvalidUserInput(format!(
+                        "Readline error: {}",
+                        e
+                    )));
+                }
+            }
+        }
+    }
+
+    fn prompt_confirmation(&self, message: &str, default: bool) -> Result<bool> {
+        let mut rl = DefaultEditor::new().map_err(|e| {
+            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {}", e))
+        })?;
+
+        loop {
+            let default_str = if default { "Y/n" } else { "y/N" };
+            let prompt = format!("{message} [{default_str}]: ");
+
+            match rl.readline(&prompt) {
+                Ok(input) => {
+                    let input = input.trim().to_lowercase();
+                    match input.as_str() {
+                        "" => return Ok(default),
+                        "y" | "yes" => return Ok(true),
+                        "n" | "no" => return Ok(false),
+                        _ => {
+                            println!("Please enter 'y' for yes or 'n' for no.");
+                            continue;
+                        }
+                    }
+                }
+                Err(rustyline::error::ReadlineError::Interrupted) => {
+                    return Err(CleanboxError::InvalidUserInput(
+                        "User interrupted input".to_string(),
+                    ));
+                }
+                Err(rustyline::error::ReadlineError::Eof) => {
+                    return Err(CleanboxError::InvalidUserInput(
+                        "End of input reached".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(CleanboxError::InvalidUserInput(format!(
+                        "Readline error: {}",
+                        e
+                    )));
+                }
+            }
+        }
+    }
+
+    fn prompt_selection(&self, message: &str, options: &[&str]) -> Result<usize> {
+        let mut rl = DefaultEditor::new().map_err(|e| {
+            CleanboxError::InvalidUserInput(format!("Failed to initialize readline: {}", e))
+        })?;
+
+        loop {
+            println!("{message}");
+            for (i, option) in options.iter().enumerate() {
+                println!("  {}. {}", i + 1, option);
+            }
+            let prompt = format!("Select (1-{}): ", options.len());
+
+            match rl.readline(&prompt) {
+                Ok(input) => {
+                    match input.trim().parse::<usize>() {
+                        Ok(choice) if choice >= 1 && choice <= options.len() => {
+                            return Ok(choice - 1); // Convert to 0-based index
+                        }
+                        _ => {
+                            println!(
+                                "Invalid selection. Please enter a number between 1 and {}.",
+                                options.len()
+                            );
+                            continue;
+                        }
+                    }
+                }
+                Err(rustyline::error::ReadlineError::Interrupted) => {
+                    return Err(CleanboxError::InvalidUserInput(
+                        "User interrupted input".to_string(),
+                    ));
+                }
+                Err(rustyline::error::ReadlineError::Eof) => {
+                    return Err(CleanboxError::InvalidUserInput(
+                        "End of input reached".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(CleanboxError::InvalidUserInput(format!(
+                        "Readline error: {}",
+                        e
+                    )));
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ConsolePrompt {
+    readline_prompt: ReadlinePrompt,
+}
 
 impl ConsolePrompt {
     pub fn new() -> Self {
-        Self
+        Self {
+            readline_prompt: ReadlinePrompt::new(),
+        }
     }
 }
 
@@ -28,84 +184,15 @@ impl Default for ConsolePrompt {
 
 impl UserPrompt for ConsolePrompt {
     fn prompt_string(&self, message: &str, default: Option<&str>) -> Result<String> {
-        loop {
-            if let Some(default_val) = default {
-                print!("{message} [{default_val}]: ");
-            } else {
-                print!("{message}: ");
-            }
-            io::stdout().flush().map_err(CleanboxError::Io)?;
-
-            let mut input = String::new();
-            io::stdin()
-                .read_line(&mut input)
-                .map_err(CleanboxError::Io)?;
-            let input = input.trim();
-
-            if input.is_empty() {
-                if let Some(default_val) = default {
-                    return Ok(default_val.to_string());
-                } else {
-                    println!("Input cannot be empty. Please try again.");
-                    continue;
-                }
-            }
-
-            return Ok(input.to_string());
-        }
+        self.readline_prompt.prompt_string(message, default)
     }
 
     fn prompt_confirmation(&self, message: &str, default: bool) -> Result<bool> {
-        loop {
-            let default_str = if default { "Y/n" } else { "y/N" };
-            print!("{message} [{default_str}]: ");
-            io::stdout().flush().map_err(CleanboxError::Io)?;
-
-            let mut input = String::new();
-            io::stdin()
-                .read_line(&mut input)
-                .map_err(CleanboxError::Io)?;
-            let input = input.trim().to_lowercase();
-
-            match input.as_str() {
-                "" => return Ok(default),
-                "y" | "yes" => return Ok(true),
-                "n" | "no" => return Ok(false),
-                _ => {
-                    println!("Please enter 'y' for yes or 'n' for no.");
-                    continue;
-                }
-            }
-        }
+        self.readline_prompt.prompt_confirmation(message, default)
     }
 
     fn prompt_selection(&self, message: &str, options: &[&str]) -> Result<usize> {
-        loop {
-            println!("{message}");
-            for (i, option) in options.iter().enumerate() {
-                println!("  {}. {}", i + 1, option);
-            }
-            print!("Select (1-{}): ", options.len());
-            io::stdout().flush().map_err(CleanboxError::Io)?;
-
-            let mut input = String::new();
-            io::stdin()
-                .read_line(&mut input)
-                .map_err(CleanboxError::Io)?;
-
-            match input.trim().parse::<usize>() {
-                Ok(choice) if choice >= 1 && choice <= options.len() => {
-                    return Ok(choice - 1); // Convert to 0-based index
-                }
-                _ => {
-                    println!(
-                        "Invalid selection. Please enter a number between 1 and {}.",
-                        options.len()
-                    );
-                    continue;
-                }
-            }
-        }
+        self.readline_prompt.prompt_selection(message, options)
     }
 }
 
