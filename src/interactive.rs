@@ -3,6 +3,7 @@ use crate::error::{CleanboxError, Result};
 use crate::filesystem::FileManager;
 use crate::tags::{TagDictionary, TagResolution, TagResolutionFlow};
 use rustyline::completion::{Completer, Pair};
+use rustyline::config::{CompletionType, Config};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
@@ -398,7 +399,10 @@ impl<P: UserPrompt> SmartTagSelector<P> {
         loop {
             // Create editor with fuzzy completer fresh each time to avoid borrowing issues
             let completer = FuzzyTagCompleter::new(self.flow.dictionary());
-            let mut editor = Editor::new().map_err(|e| {
+            let config = Config::builder()
+                .completion_type(CompletionType::List)
+                .build();
+            let mut editor = Editor::with_config(config).map_err(|e| {
                 CleanboxError::InvalidUserInput(format!("Failed to initialize editor: {e}"))
             })?;
             editor.set_helper(Some(completer));
