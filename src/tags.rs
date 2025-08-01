@@ -72,48 +72,43 @@ impl TagDictionary {
     }
 
     pub fn find_similar(&self, query: &str, max_results: usize) -> Vec<SimilarTag> {
-        let mut similar: Vec<SimilarTag> = self
-            .tags
-            .iter()
-            .map(|tag| {
-                let distance = strsim::levenshtein(query, tag);
-                let normalized_distance = distance as f64 / tag.len().max(query.len()) as f64;
-                let base_similarity = 1.0 - normalized_distance;
+        if query.is_empty() {
+            return vec![];
+        }
 
-                // Enhanced scoring with intelligent bonuses
-                let prefix_bonus = if tag.starts_with(query) { 0.5 } else { 0.0 };
-                let word_boundary_bonus = if tag.contains(&format!("-{}", query)) {
-                    0.2
-                } else {
-                    0.0
-                };
-                let early_position_bonus = match tag.find(query) {
-                    Some(pos) if pos <= 2 => 0.1,
-                    _ => 0.0,
-                };
+        // Simple prefix-based matching like bash completion
+        let mut prefix_matches: Vec<SimilarTag> = vec![];
+        let mut substring_matches: Vec<SimilarTag> = vec![];
 
-                // Calculate enhanced similarity, capped at 1.0
-                let enhanced_similarity =
-                    (base_similarity + prefix_bonus + word_boundary_bonus + early_position_bonus)
-                        .min(1.0);
-
-                SimilarTag {
+        for tag in &self.tags {
+            if tag.starts_with(query) {
+                // Exact prefix match - highest priority
+                prefix_matches.push(SimilarTag {
                     tag: tag.clone(),
-                    distance,
-                    similarity: enhanced_similarity,
-                }
-            })
-            .filter(|similar_tag| {
-                // Only include if reasonably similar (similarity > 0.3)
-                similar_tag.similarity > 0.3
-            })
-            .collect();
+                    distance: 0, // Perfect match
+                    similarity: 1.0,
+                });
+            } else if tag.contains(query) {
+                // Substring match - lower priority
+                substring_matches.push(SimilarTag {
+                    tag: tag.clone(),
+                    distance: tag.find(query).unwrap_or(0), // Position of match
+                    similarity: 0.5,
+                });
+            }
+        }
 
-        // Sort by similarity (highest first)
-        similar.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
-        similar.truncate(max_results);
+        // Sort each group alphabetically for predictable ordering
+        prefix_matches.sort_by(|a, b| a.tag.cmp(&b.tag));
+        substring_matches.sort_by(|a, b| a.tag.cmp(&b.tag));
 
-        similar
+        // Combine results: prefix matches first, then substring matches
+        let mut results = prefix_matches;
+        results.extend(substring_matches);
+
+        // Limit to max_results
+        results.truncate(max_results);
+        results
     }
 
     pub fn is_empty(&self) -> bool {
@@ -343,9 +338,10 @@ mod tests {
 
     #[test]
     fn test_find_similar() {
-        // Create a specific test dictionary to test enhanced ranking
+        // Create a test dictionary for prefix-based matching
         let mut dict = TagDictionary::new();
         dict.add_tag("receipt".to_string()).unwrap();
+        dict.add_tag("research".to_string()).unwrap();
         dict.add_tag("legacy".to_string()).unwrap();
         dict.add_tag("career".to_string()).unwrap();
         dict.add_tag("finance".to_string()).unwrap();
@@ -353,51 +349,73 @@ mod tests {
         dict.add_tag("data-science".to_string()).unwrap();
 
         // Test prefix matching (issue #11 main case)
-        let similar = dict.find_similar("re", 3);
+        let similar = dict.find_similar("re", 5);
         assert!(!similar.is_empty(), "Should find matches for 're'");
 
-        // "receipt" should be ranked highest due to prefix bonus
-        assert_eq!(
-            similar[0].tag, "receipt",
-            "Receipt should rank highest for 're' due to prefix match"
+        // Prefix matches should come first and be sorted alphabetically
+        let prefix_matches: Vec<&str> = similar
+            .iter()
+            .filter(|s| s.similarity == 1.0)
+            .map(|s| s.tag.as_str())
+            .collect();
+
+        assert!(
+            prefix_matches.contains(&"receipt"),
+            "Should find 'receipt' as prefix match"
+        );
+        assert!(
+            prefix_matches.contains(&"research"),
+            "Should find 'research' as prefix match"
         );
 
-        // Test typo matching
-        let similar = dict.find_similar("finanse", 3);
-        if !similar.is_empty() {
-            let finance_found = similar.iter().any(|s| s.tag == "finance");
-            assert!(
-                finance_found,
-                "Should find 'finance' as similar to 'finanse'"
+        // Prefix matches should be sorted alphabetically
+        if prefix_matches.len() >= 2 {
+            assert_eq!(
+                prefix_matches[0], "receipt",
+                "Receipt should come before research alphabetically"
+            );
+            assert_eq!(
+                prefix_matches[1], "research",
+                "Research should come after receipt alphabetically"
             );
         }
 
-        // Test word boundary bonus for kebab-case
-        let similar = dict.find_similar("ml", 3);
+        // Test that prefix matches rank higher than substring matches
+        let first_result = &similar[0];
+        assert_eq!(
+            first_result.similarity, 1.0,
+            "First result should be a prefix match"
+        );
+        assert!(
+            first_result.tag.starts_with("re"),
+            "First result should start with 're'"
+        );
+
+        // Test substring matching for tags containing the query
+        let similar = dict.find_similar("ance", 3);
         if !similar.is_empty() {
-            let machine_learning_found = similar.iter().any(|s| s.tag == "machine-learning");
-            if machine_learning_found {
-                // If found, machine-learning should have high ranking due to word boundary bonus
-                let ml_position = similar.iter().position(|s| s.tag == "machine-learning");
-                assert!(
-                    ml_position.is_some(),
-                    "machine-learning should be found for 'ml'"
-                );
-            }
+            let finance_found = similar.iter().any(|s| s.tag == "finance");
+            assert!(finance_found, "Should find 'finance' containing 'ance'");
+
+            // Substring matches should have similarity 0.5
+            let finance_result = similar.iter().find(|s| s.tag == "finance").unwrap();
+            assert_eq!(
+                finance_result.similarity, 0.5,
+                "Substring matches should have similarity 0.5"
+            );
         }
 
-        // Test early position bonus
-        let similar = dict.find_similar("da", 3);
-        if !similar.is_empty() {
-            let data_science_found = similar.iter().any(|s| s.tag == "data-science");
-            if data_science_found {
-                // data-science should rank well due to early position match
-                assert!(
-                    similar.iter().any(|s| s.tag == "data-science"),
-                    "Should find data-science for 'da'"
-                );
-            }
-        }
+        // Test empty query returns no results
+        let similar = dict.find_similar("", 5);
+        assert!(similar.is_empty(), "Empty query should return no results");
+
+        // Test no matches
+        let similar = dict.find_similar("xyz", 3);
+        assert!(similar.is_empty(), "Should find no matches for 'xyz'");
+
+        // Test max_results limiting
+        let similar = dict.find_similar("a", 2); // Should find career, data-science, machine-learning
+        assert!(similar.len() <= 2, "Should respect max_results limit");
     }
 
     #[test]
